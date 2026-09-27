@@ -30,7 +30,7 @@ def generate_narrative(captions_path, output_dir=None):
     backend_fn = get_backend(NARRATIVE_BACKEND)
     narrative = backend_fn(scenes)
 
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write(narrative)
 
     logging.info(f"Narrative ({NARRATIVE_BACKEND} backend) saved to {output_path}")

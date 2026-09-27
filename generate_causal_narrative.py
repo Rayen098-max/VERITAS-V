@@ -31,11 +31,11 @@ def generate_causal_narrative(captions_path, output_dir=None):
     backend_fn = get_backend(CAUSAL_BACKEND)
     causal_links = backend_fn(scenes)
 
-    with open(json_output_path, "w") as f:
+    with open(json_output_path, "w", encoding="utf-8") as f:
         json.dump(causal_links, f, indent=2)
 
     narrative = " ".join(link["causal_statement"] for link in causal_links)
-    with open(text_output_path, "w") as f:
+    with open(text_output_path, "w", encoding="utf-8") as f:
         f.write(narrative)
 
     logging.info(f"Causal links ({CAUSAL_BACKEND} backend) saved to {json_output_path}")

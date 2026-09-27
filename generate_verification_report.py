@@ -40,7 +40,7 @@ def generate_verification_report(captions_path, output_dir=None):
     backend_fn = get_backend(VERIFICATION_BACKEND)
     report = backend_fn(claims, scenes)
 
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
 
     logging.info(f"Verification report ({VERIFICATION_BACKEND} backend) saved to {output_path}")

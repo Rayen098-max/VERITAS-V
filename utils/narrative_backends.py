@@ -50,30 +50,35 @@ def mock_narrative_backend(scenes, **kwargs):
 #     build_prompt_and_images() in chat_gpt_utils.py, but text-only (no images needed here).
 
 def llm_narrative_backend(scenes, **kwargs):
-    '''Generate a narrative using a real LLM. Not yet implemented — requires an API key.'''
+    '''Generate a narrative using a real LLM via Groq API.'''
+    import os
+    from openai import OpenAI
 
-    # provider = os.getenv("NARRATIVE_LLM_PROVIDER", "openai")
-    # model = os.getenv("NARRATIVE_LLM_MODEL", "gpt-4o-mini")
-    # api_key = os.getenv("OPENAI_API_KEY")  # or provider-specific key
-    #
-    # scene_lines = []
-    # for scene_id in sorted(scenes.keys()):
-    #     scene = scenes[scene_id]
-    #     scene_lines.append(
-    #         f"[{scene_id} {scene['start_time']:.1f}-{scene['end_time']:.1f}s] "
-    #         f"Caption: {scene['caption']} | Action Summary: {scene.get('action_summary', '')} | Transcript: {scene.get('transcript_text', '')}"
-    #     )
-    # prompt = (
-    #     "Merge the following per-scene descriptions of a video into a single coherent "
-    #     "narrative paragraph describing the video as a continuous story:\n\n"
-    #     + "\n".join(scene_lines)
-    # )
-    # response = <call provider chat completion API with prompt>
-    # return response.strip()
+    api_key = os.getenv("GROQ_API_KEY")
+    model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+    if not api_key:
+        raise ValueError("GROQ_API_KEY is not set.")
+    
+    client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
 
-    raise NotImplementedError(
-        "LLM narrative backend not yet implemented — requires an API key (OpenAI/Anthropic/etc.), see README."
+    scene_lines = []
+    for scene_id in sorted(scenes.keys()):
+        scene = scenes[scene_id]
+        scene_lines.append(
+            f"[{scene_id} {scene['start_time']:.1f}-{scene['end_time']:.1f}s] "
+            f"Caption: {scene.get('caption', '')} | Action Summary: {scene.get('action_summary', '')} | Transcript: {scene.get('transcript_text', '')}"
+        )
+    prompt = (
+        "Merge the following per-scene descriptions of a video into a single coherent "
+        "narrative paragraph describing the video as a continuous story:\n\n"
+        + "\n".join(scene_lines)
     )
+    
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response.choices[0].message.content.strip()
 
 
 BACKENDS = {

@@ -91,41 +91,64 @@ def mock_causal_backend(scenes, **kwargs):
 #     it can be parsed directly into the same list[dict] shape the mock backend returns.
 
 def llm_causal_backend(scenes, **kwargs):
-    '''Infer causal links between consecutive scenes using a real LLM. Not yet implemented.'''
+    '''Infer causal links between consecutive scenes using a real LLM via Groq API.'''
+    import os
+    import json
+    from openai import OpenAI
 
-    # provider = os.getenv("CAUSAL_LLM_PROVIDER", "openai")
-    # model = os.getenv("CAUSAL_LLM_MODEL", "gpt-4o-mini")
-    # api_key = os.getenv("OPENAI_API_KEY")  # or provider-specific key
-    #
-    # scene_ids = sorted(scenes.keys())
-    # pairs = []
-    # for i in range(1, len(scene_ids)):
-    #     prev, cur = scenes[scene_ids[i - 1]], scenes[scene_ids[i]]
-    #     pairs.append({
-    #         "prev_scene_id": scene_ids[i - 1], "prev_caption": prev["caption"],
-    #         "prev_action_summary": prev.get("action_summary", ""),
-    #         "prev_detected_elements": prev.get("detected_elements", {}),
-    #         "prev_transcript": prev.get("transcript_text", ""),
-    #         "cur_scene_id": scene_ids[i], "cur_caption": cur["caption"],
-    #         "cur_action_summary": cur.get("action_summary", ""),
-    #         "cur_detected_elements": cur.get("detected_elements", {}),
-    #         "cur_transcript": cur.get("transcript_text", ""),
-    #     })
-    # prompt = (
-    #     "For each pair of consecutive scenes below, state whether the later scene is a "
-    #     "plausible causal consequence of the earlier one. Analyze `detected_elements` (primary_actor, objects, environment) "
-    #     "and `action_summary` across consecutive scenes. Use shared objects and primary actors between scenes "
-    #     "to detect stronger cause-and-effect links. Do not force a causal link where "
-    #     "none is implied by the captions/transcript — it is fine to report no link. "
-    #     "Return JSON matching this schema: [{scene_id, event, cause_scene_id, cause, "
-    #     "causal_statement, confidence}, ...]\n\n" + json.dumps(pairs, indent=2)
-    # )
-    # response = <call provider chat completion API with prompt>
-    # return json.loads(response)
+    api_key = os.getenv("GROQ_API_KEY")
+    model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+    if not api_key:
+        raise ValueError("GROQ_API_KEY is not set.")
+    
+    client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
 
-    raise NotImplementedError(
-        "LLM causal reasoning backend not yet implemented — requires an API key (OpenAI/Anthropic/etc.), see README."
+    scene_ids = sorted(scenes.keys())
+    pairs = []
+    for i in range(1, len(scene_ids)):
+        prev, cur = scenes[scene_ids[i - 1]], scenes[scene_ids[i]]
+        pairs.append({
+            "prev_scene_id": scene_ids[i - 1], "prev_caption": prev.get("caption", ""),
+            "prev_action_summary": prev.get("action_summary", ""),
+            "prev_detected_elements": prev.get("detected_elements", {}),
+            "prev_transcript": prev.get("transcript_text", ""),
+            "cur_scene_id": scene_ids[i], "cur_caption": cur.get("caption", ""),
+            "cur_action_summary": cur.get("action_summary", ""),
+            "cur_detected_elements": cur.get("detected_elements", {}),
+            "cur_transcript": cur.get("transcript_text", ""),
+        })
+        
+    prompt = (
+        "For each pair of consecutive scenes below, state whether the later scene is a "
+        "plausible causal consequence of the earlier one. Analyze `detected_elements` (primary_actor, objects, environment) "
+        "and `action_summary` across consecutive scenes. Use shared objects and primary actors between scenes "
+        "to detect stronger cause-and-effect links. Do not force a causal link where "
+        "none is implied by the captions/transcript — it is fine to report no link. "
+        "Return strictly a JSON object with a single key 'links' containing an array of these objects: {\"links\": [{scene_id, event, cause_scene_id, cause, "
+        "causal_statement, confidence}, ...]}\n\n" + json.dumps(pairs, indent=2)
     )
+    
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"}
+    )
+    
+    content = response.choices[0].message.content.strip()
+    
+    # Try parsing directly
+    try:
+        data = json.loads(content)
+        if isinstance(data, dict):
+            # some models wrap it in a root key like 'links'
+            for k in data:
+                if isinstance(data[k], list):
+                    return data[k]
+            return [data] # Fallback
+        return data
+    except Exception as e:
+        logging.error(f"Failed to parse Groq response: {content}")
+        raise e
 
 
 BACKENDS = {
