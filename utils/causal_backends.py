@@ -36,16 +36,32 @@ def mock_causal_backend(scenes, **kwargs):
 
         prev_id = scene_ids[i - 1]
         prev_scene = scenes[prev_id]
-        overlap = set(scene.get("keywords") or []) & set(prev_scene.get("keywords") or [])
-
-        if overlap:
+        overlap_keywords = set(scene.get("keywords") or []) & set(prev_scene.get("keywords") or [])
+        
+        cur_elements = scene.get("detected_elements", {})
+        prev_elements = prev_scene.get("detected_elements", {})
+        
+        cur_actor = (cur_elements.get("primary_actor") or "").lower()
+        prev_actor = (prev_elements.get("primary_actor") or "").lower()
+        shared_actor = bool(cur_actor and cur_actor == prev_actor)
+        
+        overlap_objects = set(cur_elements.get("objects") or []) & set(prev_elements.get("objects") or [])
+        
+        if shared_actor or overlap_objects or overlap_keywords:
             cause = (prev_scene.get("caption") or "").strip()
+            
+            reasons = []
+            if shared_actor: reasons.append(f"shared actor: {cur_actor}")
+            if overlap_objects: reasons.append(f"shared objects: {sorted(overlap_objects)}")
+            if overlap_keywords: reasons.append(f"shared keywords: {sorted(overlap_keywords)}")
+            reason_str = ", ".join(reasons)
+            
             results.append({
                 "scene_id": scene_id,
                 "event": event,
                 "cause_scene_id": prev_id,
                 "cause": cause,
-                "causal_statement": f"{event}, likely because {cause.rstrip('.')} (shared keywords: {sorted(overlap)}).",
+                "causal_statement": f"{event}, likely because {cause.rstrip('.')} ({reason_str}).",
                 "confidence": "mock-heuristic",
             })
         else:
@@ -87,13 +103,19 @@ def llm_causal_backend(scenes, **kwargs):
     #     prev, cur = scenes[scene_ids[i - 1]], scenes[scene_ids[i]]
     #     pairs.append({
     #         "prev_scene_id": scene_ids[i - 1], "prev_caption": prev["caption"],
+    #         "prev_action_summary": prev.get("action_summary", ""),
+    #         "prev_detected_elements": prev.get("detected_elements", {}),
     #         "prev_transcript": prev.get("transcript_text", ""),
     #         "cur_scene_id": scene_ids[i], "cur_caption": cur["caption"],
+    #         "cur_action_summary": cur.get("action_summary", ""),
+    #         "cur_detected_elements": cur.get("detected_elements", {}),
     #         "cur_transcript": cur.get("transcript_text", ""),
     #     })
     # prompt = (
     #     "For each pair of consecutive scenes below, state whether the later scene is a "
-    #     "plausible causal consequence of the earlier one. Do not force a causal link where "
+    #     "plausible causal consequence of the earlier one. Analyze `detected_elements` (primary_actor, objects, environment) "
+    #     "and `action_summary` across consecutive scenes. Use shared objects and primary actors between scenes "
+    #     "to detect stronger cause-and-effect links. Do not force a causal link where "
     #     "none is implied by the captions/transcript — it is fine to report no link. "
     #     "Return JSON matching this schema: [{scene_id, event, cause_scene_id, cause, "
     #     "causal_statement, confidence}, ...]\n\n" + json.dumps(pairs, indent=2)

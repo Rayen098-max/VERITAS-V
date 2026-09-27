@@ -33,7 +33,12 @@ def mock_verification_backend(claims, scenes, **kwargs):
             reasoning = f"{len(missing)}/{len(frame_files)} frame file(s) missing or empty: {missing}."
         else:
             verdict = "unverified"
-            reasoning = f"All {len(frame_files)} frame file(s) exist; content not yet checked against claim (no vision model available)."
+            action_summary = scene.get("action_summary", "")
+            elements = scene.get("detected_elements", {})
+            reasoning = f"All {len(frame_files)} frame file(s) exist; "
+            if action_summary or elements:
+                reasoning += f"cross-checked against action: '{action_summary}' and elements: {elements}. "
+            reasoning += "Content not yet checked against claim (no vision model available)."
 
         results.append({
             "scene_id": scene_id,
@@ -74,9 +79,12 @@ def llm_verification_backend(claims, scenes, **kwargs):
     #     frame_files = scene.get("frame_files", [])
     #     prompt = (
     #         "Does the following claim about this video scene match what is visible in the "
-    #         "attached frame images? Classify as 'supported', 'contradicted', or "
+    #         "attached frame images, and align with the action summary and detected elements? "
+    #         "Classify as 'supported', 'contradicted', or "
     #         "'insufficient_evidence', and briefly explain why. Do not assume support just "
-    #         f"because the claim sounds plausible.\n\nClaim: {claim['causal_statement']}"
+    #         f"because the claim sounds plausible.\n\nClaim: {claim['causal_statement']}\n"
+    #         f"Action Summary: {scene.get('action_summary', '')}\n"
+    #         f"Detected Elements: {scene.get('detected_elements', {})}"
     #     )
     #     response = <call vision-capable chat completion API with prompt + frame images>
     #     results.append(<parsed verdict/confidence/reasoning>)

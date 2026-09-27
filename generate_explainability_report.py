@@ -50,6 +50,8 @@ def generate_explainability_report(captions_path, output_dir=None):
                 "frame_files": scene.get("frame_files", []),
                 "start_time": scene.get("start_time"),
                 "end_time": scene.get("end_time"),
+                "action_summary": scene.get("action_summary", ""),
+                "detected_elements": scene.get("detected_elements", {}),
             },
         })
 

@@ -40,6 +40,9 @@ def structured_style(records, **kwargs):
             f"{r['claim']} [confidence: {r['confidence']} -{tag} {r['verdict'].upper()}] "
             f"`({ev['start_time']:.2f}s-{ev['end_time']:.2f}s, {n_frames} frames)`"
         )
+        if ev.get('action_summary') or ev.get('detected_elements'):
+            md_lines.append(f"> **Action Summary**: {ev.get('action_summary', '')}")
+            md_lines.append(f"> **Elements**: {ev.get('detected_elements', {})}")
         md_lines.append("")
 
     return json_records, "\n".join(md_lines).rstrip() + "\n"

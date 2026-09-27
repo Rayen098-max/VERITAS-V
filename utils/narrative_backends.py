@@ -21,9 +21,12 @@ def mock_narrative_backend(scenes, **kwargs):
             connector = CONNECTORS[min(i, len(CONNECTORS) - 2)]
 
         caption = (scene.get("caption") or "").strip()
+        action_summary = (scene.get("action_summary") or "").strip()
         transcript = (scene.get("transcript_text") or "").strip()
 
         sentence = f"{connector} {caption}"
+        if action_summary:
+            sentence += f" (Action: {action_summary})"
         if transcript:
             snippet = transcript[:TRANSCRIPT_SNIPPET_LEN]
             if len(transcript) > TRANSCRIPT_SNIPPET_LEN:
@@ -58,7 +61,7 @@ def llm_narrative_backend(scenes, **kwargs):
     #     scene = scenes[scene_id]
     #     scene_lines.append(
     #         f"[{scene_id} {scene['start_time']:.1f}-{scene['end_time']:.1f}s] "
-    #         f"Caption: {scene['caption']} | Transcript: {scene.get('transcript_text', '')}"
+    #         f"Caption: {scene['caption']} | Action Summary: {scene.get('action_summary', '')} | Transcript: {scene.get('transcript_text', '')}"
     #     )
     # prompt = (
     #     "Merge the following per-scene descriptions of a video into a single coherent "
