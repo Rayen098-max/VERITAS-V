@@ -1,0 +1,49 @@
+.
+├── PROJECT_STRUCTURE.txt
+├── bath_input.jsonl
+├── captioning.py                     # Stage 1: scene detection, frames, transcription, captioning
+├── generate_narrative.py             # Stage 2: merge per-scene captions into one narrative
+├── generate_causal_narrative.py      # Stage 3: infer cause-effect links between scenes
+├── generate_verification_report.py   # Stage 4: verify causal claims against frame images
+├── generate_explainability_report.py # Stage 5: assemble final evidence-annotated report
+├── load_dataset_sample.py            # Downloads a small benchmark dataset sample (e.g. MSR-VTT)
+├── evaluate_captions.py              # Scores narrative output against ground truth (BLEU-4/ROUGE-L/METEOR)
+├── captions
+├── datasets
+│   ├── msrvtt
+│   │   ├── annotations       # Official annotation JSON (tracked)
+│   │   ├── videos             # Downloaded sample clips (gitignored)
+│   │   ├── ground_truth.json  # video_id -> reference caption(s), for scoring
+│   │   ├── msrvtt_evaluation.json # Per-video + averaged BLEU-4/ROUGE-L/METEOR scores (gitignored)
+│   │   └── msrvtt_evaluation.md   # Human-readable evaluation summary (gitignored)
+│   └── activitynet
+│       ├── annotations       # Official ActivityNet Captions JSON (tracked)
+│       ├── videos             # Empty for now - video download not yet implemented (gitignored)
+│       └── ground_truth.json  # video_id -> reference caption(s)/timestamps, for scoring
+├── diarization.py
+├── frames
+├── logs
+├── media
+├── output
+├── requirements.txt
+├── speaker_map.json
+├── tmp
+├── transcripts
+├── .env
+├── .gitignore
+└── utils
+    ├── __pycache__
+    ├── batch_utils.py
+    ├── captioning_backends.py     # Backend adapters: gpt4o, mock, qwen25vl (stubbed)
+    ├── narrative_backends.py      # Backend adapters: mock, llm (stubbed)
+    ├── causal_backends.py         # Backend adapters: mock, llm (stubbed)
+    ├── verification_backends.py   # Backend adapters: mock, llm (stubbed)
+    ├── explainability_styles.py   # Styles: structured (deterministic), narrative_llm (stubbed)
+    ├── chat_gpt_utils.py
+    ├── diarization_utils.py
+    ├── extract_utils.py
+    ├── logging_utils.py
+    ├── speaker_utils.py
+    └── whisper_utils.py
+
+12 directories, 515 files

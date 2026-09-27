@@ -1,0 +1,45 @@
+# API keys and config
+.env
+
+# Local Claude Code permission settings
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+.venv/
+
+# Generated files and media
+frames/
+captions/
+output/
+tmp/
+media/
+transcripts/
+logs/
+
+# Downloaded dataset video files (annotations/ground_truth JSON stays tracked)
+datasets/*/videos/
+
+# Generated evaluation reports (regenerated per pipeline run, not source data)
+datasets/*/*_evaluation.json
+datasets/*/*_evaluation.md
+
+# Logs
+*.log
+.DS_Store
+
+venv/
+
+# Node/React/Vite
+node_modules/
+dist/
+dist-ssr/
+*.local
+.eslintcache
+.stylelintcache
+
