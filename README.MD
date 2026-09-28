@@ -39,38 +39,38 @@ Supports the Batch APIs for GPT, with token usage tracking and cost estimation i
 ## Project Structure
 
 ```
-project_root/
-├── captioning.py                     # Stage 1: scene detection, frames, transcription, captioning
-├── generate_narrative.py             # Stage 2: merge per-scene captions into one narrative
-├── generate_causal_narrative.py      # Stage 3: infer cause-effect links between scenes
-├── generate_verification_report.py   # Stage 4: verify causal claims against frame images
-├── generate_explainability_report.py # Stage 5: assemble final evidence-annotated report
-├── load_dataset_sample.py           # Downloads a small benchmark dataset sample (e.g. MSR-VTT)
-├── evaluate_captions.py             # Scores narrative output against ground truth (BLEU-4/ROUGE-L/METEOR)
-├── datasets/
-│   └── msrvtt/
-│       ├── annotations/           # Official annotation JSON (tracked)
-│       ├── videos/                # Downloaded sample clips (gitignored)
-│       ├── ground_truth.json      # video_id -> reference caption(s), for scoring
-│       ├── msrvtt_evaluation.json # Per-video + averaged scores (gitignored)
-│       └── msrvtt_evaluation.md   # Human-readable evaluation summary (gitignored)
-├── .env                             # Environment config
-├── requirements.txt                 # Dependencies
-├── utils/
-│   ├── captioning_backends.py     # Backend adapters: gpt4o, mock, qwen25vl (stubbed)
-│   ├── narrative_backends.py      # Backend adapters: mock, llm (stubbed)
-│   ├── causal_backends.py         # Backend adapters: mock, llm (stubbed)
-│   ├── verification_backends.py   # Backend adapters: mock, llm (stubbed)
-│   ├── explainability_styles.py   # Styles: structured (deterministic), narrative_llm (stubbed)
-│   ├── chat_gpt_utils.py          # GPT captioning logic
-│   ├── batch_utils.py             # OpenAI batch API handling
-│   ├── whisper_utils.py           # Whisper transcription
-│   ├── extract_utils.py           # Frame extraction (FFmpeg)
-│   └── logging_utils.py           # Log setup
-├── logs/                         # Per-video logs
-├── captions/                     # Final output JSONs (captions, narrative, causal, verification)
-├── frames/                       # Extracted scene frames
-└── transcripts/                  # Transcription cache
+video-extraction-pipeline/
+├── src/                                  # Core pipeline modules & utilities
+│   ├── pipeline/                         # 5-Stage execution logic (stages 1-5)
+│   │   ├── stage1_captioning.py
+│   │   ├── stage2_narrative.py
+│   │   ├── stage3_causal.py
+│   │   ├── stage4_verification.py
+│   │   └── stage5_explainability.py
+│   └── utils/                            # Client wrappers & backend helpers
+│       ├── groq_client.py
+│       ├── captioning_backends.py
+│       ├── causal_backends.py
+│       ├── verification_backends.py
+│       ├── explainability_styles.py
+│       ├── chat_gpt_utils.py
+│       ├── batch_utils.py
+│       ├── whisper_utils.py
+│       ├── extract_utils.py
+│       └── logging_utils.py
+├── scripts/                              # Runners & evaluation scripts
+│   ├── run_youtube_test.py
+│   ├── evaluate_causal_reasoning.py
+│   ├── evaluate_hallucination_verification.py
+│   └── evaluate_llm_judge.py
+├── datasets/                             # Benchmark dataset loaders & annotations
+│   ├── nextqa/
+│   └── videohallucer/
+├── media/                                # Input video files
+├── output/                               # Generated json/md report artifacts
+├── .env
+├── requirements.txt
+└── README.md
 ```
 
 ---
@@ -126,28 +126,37 @@ The project uses a `.env` file for configuration. Create a `.env` file. Below is
 
 ## Usage
 
-### Full pipeline (run in order)
+### Quickstart Evaluation Test
 
+To run the full end-to-end multi-modal pipeline on a custom video:
 ```bash
-python3 captioning.py --input ./videos/my_clip.mp4
-python3 generate_narrative.py --input captions/my_clip_captions.json
-python3 generate_causal_narrative.py --input captions/my_clip_captions.json
-python3 generate_verification_report.py --input captions/my_clip_captions.json
-python3 generate_explainability_report.py --input captions/my_clip_captions.json
+python scripts/run_youtube_test.py --input media/my_video.mp4
 ```
 
-Each downstream stage reads directly from the captions JSON (and, for verification/explainability, the causal and/or verification JSON) produced by the earlier stages — there's no single "run everything" entry point yet, each script is standalone.
+### Full pipeline (run in order)
+
+Alternatively, each stage can be executed independently:
+
+```bash
+python src/pipeline/stage1_captioning.py --input ./media/my_video.mp4 --output output
+python src/pipeline/stage2_narrative.py --input output/my_video_captions.json
+python src/pipeline/stage3_causal.py --input output/my_video_captions.json
+python src/pipeline/stage4_verification.py --input output/my_video_captions.json
+python src/pipeline/stage5_explainability.py --input output/my_video_captions.json
+```
+
+Each downstream stage reads directly from the artifacts generated by the earlier stages in the `output/` directory.
 
 ### Process all videos in a folder (stage 1 only)
 
 ```bash
-python3 captioning.py --input ./videos
+python src/pipeline/stage1_captioning.py --input ./media --output output
 ```
 
 Optional CLI args (all five scripts):
 
-- `--input` → path to a video/directory (`captioning.py`) or a `<video>_captions.json` file (the other four scripts)
-- `--output` → output folder (default: `captions/`, or same directory as `--input` for stages 2-5)
+- `--input` → path to a video/directory (`stage1_captioning.py`) or a `<video>_captions.json` file (the other four scripts)
+- `--output` → output folder (default: `output/`, or same directory as `--input` for stages 2-5)
 - `--log` → log output folder (default: `logs/`)
 
 ---
@@ -287,6 +296,4 @@ The system logs:
 
 ---
 
-## License
-
-MIT License. © 2025 Selina Mangaroo
+Kono daigaku o moyase.
