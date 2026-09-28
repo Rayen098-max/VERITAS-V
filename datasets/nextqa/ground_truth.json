@@ -1,0 +1,72 @@
+{
+  "nextqa_vid1": {
+    "qa_pairs": [
+      {
+        "type": "why",
+        "question": "Why does the person fall in nextqa_vid1?",
+        "answer": "slippery floor warning"
+      },
+      {
+        "type": "how",
+        "question": "How does the scene start in nextqa_vid1?",
+        "answer": "caption reading mock action"
+      }
+    ]
+  },
+  "nextqa_vid2": {
+    "qa_pairs": [
+      {
+        "type": "why",
+        "question": "Why does the person fall in nextqa_vid2?",
+        "answer": "slippery floor warning"
+      },
+      {
+        "type": "how",
+        "question": "How does the scene start in nextqa_vid2?",
+        "answer": "caption reading mock action"
+      }
+    ]
+  },
+  "nextqa_vid3": {
+    "qa_pairs": [
+      {
+        "type": "why",
+        "question": "Why does the person fall in nextqa_vid3?",
+        "answer": "slippery floor warning"
+      },
+      {
+        "type": "how",
+        "question": "How does the scene start in nextqa_vid3?",
+        "answer": "caption reading mock action"
+      }
+    ]
+  },
+  "nextqa_vid4": {
+    "qa_pairs": [
+      {
+        "type": "why",
+        "question": "Why does the person fall in nextqa_vid4?",
+        "answer": "slippery floor warning"
+      },
+      {
+        "type": "how",
+        "question": "How does the scene start in nextqa_vid4?",
+        "answer": "caption reading mock action"
+      }
+    ]
+  },
+  "nextqa_vid5": {
+    "qa_pairs": [
+      {
+        "type": "why",
+        "question": "Why does the person fall in nextqa_vid5?",
+        "answer": "slippery floor warning"
+      },
+      {
+        "type": "how",
+        "question": "How does the scene start in nextqa_vid5?",
+        "answer": "caption reading mock action"
+      }
+    ]
+  }
+}

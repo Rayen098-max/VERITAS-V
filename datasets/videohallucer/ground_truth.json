@@ -1,0 +1,62 @@
+{
+  "vh_vid1": {
+    "claims": [
+      {
+        "text": "The video shows a dog running in vh_vid1.",
+        "label": "supported"
+      },
+      {
+        "text": "The video shows a flying car in vh_vid1.",
+        "label": "contradicted"
+      }
+    ]
+  },
+  "vh_vid2": {
+    "claims": [
+      {
+        "text": "The video shows a dog running in vh_vid2.",
+        "label": "supported"
+      },
+      {
+        "text": "The video shows a flying car in vh_vid2.",
+        "label": "contradicted"
+      }
+    ]
+  },
+  "vh_vid3": {
+    "claims": [
+      {
+        "text": "The video shows a dog running in vh_vid3.",
+        "label": "supported"
+      },
+      {
+        "text": "The video shows a flying car in vh_vid3.",
+        "label": "contradicted"
+      }
+    ]
+  },
+  "vh_vid4": {
+    "claims": [
+      {
+        "text": "The video shows a dog running in vh_vid4.",
+        "label": "supported"
+      },
+      {
+        "text": "The video shows a flying car in vh_vid4.",
+        "label": "contradicted"
+      }
+    ]
+  },
+  "vh_vid5": {
+    "claims": [
+      {
+        "text": "The video shows a dog running in vh_vid5.",
+        "label": "supported"
+      },
+      {
+        "text": "The video shows a flying car in vh_vid5.",
+        "label": "contradicted"
+      }
+    ]
+  }
+}
