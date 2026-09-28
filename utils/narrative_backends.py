@@ -52,14 +52,8 @@ def mock_narrative_backend(scenes, **kwargs):
 def llm_narrative_backend(scenes, **kwargs):
     '''Generate a narrative using a real LLM via Groq API.'''
     import os
-    from openai import OpenAI
-
-    api_key = os.getenv("GROQ_API_KEY")
+    from utils.groq_client import execute_with_groq_failover
     model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
-    if not api_key:
-        raise ValueError("GROQ_API_KEY is not set.")
-    
-    client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
 
     scene_lines = []
     for scene_id in sorted(scenes.keys()):
@@ -74,10 +68,13 @@ def llm_narrative_backend(scenes, **kwargs):
         + "\n".join(scene_lines)
     )
     
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}]
-    )
+    def _call(client):
+        return client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+    response = execute_with_groq_failover(_call)
     return response.choices[0].message.content.strip()
 
 

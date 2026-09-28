@@ -35,23 +35,38 @@ def build_prompt_and_images(transcript_text, frames):
         f"\n\nTranscript:\n{transcript_text}"
     )
 
-    image_inputs = [
-        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
-        for p in frames.values()
-        if (b64 := encode_image_to_base64(p)) is not None
-    ]
+    image_inputs = []
+    # To avoid Groq 3 image max limit, select up to 3 evenly spaced frames
+    frame_list = list(frames.values())
+    if len(frame_list) > 3:
+        indices = [0, len(frame_list) // 2, len(frame_list) - 1]
+        frame_list = [frame_list[i] for i in indices]
+        
+    for p in frame_list:
+        b64 = encode_image_to_base64(p)
+        if b64 is not None:
+            image_inputs.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
 
     return prompt, image_inputs
 
 # Convert image to base64 for OpenAI API
 def encode_image_to_base64(path):
-    '''Encode an image file to base64 string.'''
+    '''Encode an image file to base64 string, downscaled to max 1024px.'''
+    from PIL import Image
+    import io
     
     if not os.path.exists(path):
         logging.info(f"Skipping missing image: {path}")
         return None
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
+    try:
+        with Image.open(path) as img:
+            img.thumbnail((1024, 1024))
+            buffer = io.BytesIO()
+            img.save(buffer, format="JPEG")
+            return base64.b64encode(buffer.getvalue()).decode("utf-8")
+    except Exception as e:
+        logging.error(f"Failed to encode image {path}: {e}")
+        return None
 
 def calculate_token_cost(model_name, prompt_tokens, completion_tokens, batch_mode=False):
     '''Calculate the estimated cost of tokens used in a request.'''

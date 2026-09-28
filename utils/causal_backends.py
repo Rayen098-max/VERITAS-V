@@ -94,16 +94,22 @@ def llm_causal_backend(scenes, **kwargs):
     '''Infer causal links between consecutive scenes using a real LLM via Groq API.'''
     import os
     import json
-    from openai import OpenAI
-
-    api_key = os.getenv("GROQ_API_KEY")
-    model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
-    if not api_key:
-        raise ValueError("GROQ_API_KEY is not set.")
+    from utils.groq_client import execute_with_groq_failover
     
-    client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+    model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
 
     scene_ids = sorted(scenes.keys())
+    if len(scene_ids) == 1:
+        cur = scenes[scene_ids[0]]
+        return [{
+            "scene_id": scene_ids[0],
+            "event": cur.get("caption", ""),
+            "cause_scene_id": None,
+            "cause": None,
+            "causal_statement": cur.get("caption", ""),
+            "confidence": "no_prior_scene"
+        }]
+
     pairs = []
     for i in range(1, len(scene_ids)):
         prev, cur = scenes[scene_ids[i - 1]], scenes[scene_ids[i]]
@@ -128,11 +134,14 @@ def llm_causal_backend(scenes, **kwargs):
         "causal_statement, confidence}, ...]}\n\n" + json.dumps(pairs, indent=2)
     )
     
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"}
-    )
+    def _call(client):
+        return client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"}
+        )
+    
+    response = execute_with_groq_failover(_call)
     
     content = response.choices[0].message.content.strip()
     

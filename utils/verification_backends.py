@@ -70,14 +70,8 @@ def llm_verification_backend(claims, scenes, **kwargs):
     '''Verify claims against frame images using a real vision-capable LLM via Groq API.'''
     import os
     import json
-    from openai import OpenAI
-
-    api_key = os.getenv("GROQ_API_KEY")
+    from utils.groq_client import execute_with_groq_failover
     model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
-    if not api_key:
-        raise ValueError("GROQ_API_KEY is not set.")
-        
-    client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
 
     results = []
     for claim in claims:
@@ -100,11 +94,14 @@ def llm_verification_backend(claims, scenes, **kwargs):
         )
         
         try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"}
-            )
+            def _call(client):
+                return client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format={"type": "json_object"}
+                )
+            
+            response = execute_with_groq_failover(_call)
             content = response.choices[0].message.content.strip()
             parsed = json.loads(content)
             

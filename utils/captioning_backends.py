@@ -153,10 +153,46 @@ def qwen25vl_backend(frame_paths, transcript, **kwargs):
         }
 
 
+def groq_backend(frame_paths, transcript, **kwargs):
+    '''Caption a scene using Groq Vision API with failover.'''
+    from utils.groq_client import execute_with_groq_failover
+    from utils.chat_gpt_utils import build_prompt_and_images, safe_json_extract
+    
+    prompt, images = build_prompt_and_images(transcript, frame_paths)
+    model = os.getenv("GROQ_VISION_MODEL", "llama-3.2-11b-vision-preview")
+    
+    def _call(client):
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": [{"type": "text", "text": prompt}] + images}],
+            max_tokens=400,
+            response_format={"type": "json_object"}
+        )
+        return response.choices[0].message.content.strip()
+
+    content = execute_with_groq_failover(_call)
+    obj = json.loads(safe_json_extract(content))
+    caption = (obj.get("caption") or "").strip()
+    keywords = obj.get("keywords", [])
+    if isinstance(keywords, str):
+        keywords = [kw.strip() for kw in keywords.split(",") if kw.strip()]
+    elif isinstance(keywords, list):
+        keywords = [str(kw).strip() for kw in keywords if str(kw).strip()]
+    else:
+        keywords = []
+        
+    return {
+        "caption": caption,
+        "action_summary": obj.get("action_summary", ""),
+        "detected_elements": obj.get("detected_elements", {}),
+        "keywords": keywords
+    }
+
 BACKENDS = {
     "gpt4o": gpt4o_backend,
     "qwen25vl": qwen25vl_backend,
     "mock": mock_backend,
+    "groq": groq_backend,
 }
 
 

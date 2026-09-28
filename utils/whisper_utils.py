@@ -32,7 +32,11 @@ def transcribe_video_with_whisper(video_path, TRANSCRIPT_CACHE_DIR, WHISPER_MODE
 
     logging.info("Transcribing video with Whisper...")
     model = whisper.load_model(WHISPER_MODEL_SIZE)
-    result = model.transcribe(video_path, verbose=False)
+    try:
+        result = model.transcribe(video_path, verbose=False)
+    except RuntimeError as e:
+        logging.warning(f"Whisper transcription failed (likely no audio track): {e}")
+        result = {"segments": []}
 
     segments = result.get("segments") or []
     if not segments:
