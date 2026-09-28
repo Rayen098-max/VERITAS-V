@@ -1,3 +1,6 @@
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+import os
 import logging
 
 # Common style signature: (records: list[dict]) -> (json_records: list[dict], markdown: str)

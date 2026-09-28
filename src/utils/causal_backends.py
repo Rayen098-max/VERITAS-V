@@ -1,3 +1,5 @@
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 import logging
 
 # Common backend signature: (scenes: dict, **kwargs) -> list[dict], each item shaped:
@@ -94,7 +96,7 @@ def llm_causal_backend(scenes, **kwargs):
     '''Infer causal links between consecutive scenes using a real LLM via Groq API.'''
     import os
     import json
-    from utils.groq_client import execute_with_groq_failover
+    from src.utils.groq_client import execute_with_groq_failover
     
     model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
 

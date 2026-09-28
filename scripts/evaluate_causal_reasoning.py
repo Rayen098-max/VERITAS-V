@@ -1,3 +1,5 @@
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 import os
 import json
 import subprocess
@@ -36,9 +38,9 @@ def evaluate():
         # Stage 1
         subprocess.run(["python", "captioning.py", "--input", vid_path, "--output", "output"], check=True)
         # Stage 2
-        subprocess.run(["python", "generate_narrative.py", "--input", f"output/{vid_id}_captions.json"], check=True)
+        subprocess.run(["python", "src/pipeline/stage2_narrative.py", "--input", f"output/{vid_id}_captions.json"], check=True)
         # Stage 3
-        subprocess.run(["python", "generate_causal_narrative.py", "--input", f"output/{vid_id}_captions.json"], check=True)
+        subprocess.run(["python", "src/pipeline/stage3_causal.py", "--input", f"output/{vid_id}_captions.json"], check=True)
         
     # Evaluate
     results = []

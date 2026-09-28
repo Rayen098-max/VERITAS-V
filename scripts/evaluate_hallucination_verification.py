@@ -1,3 +1,5 @@
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 import os
 import json
 import subprocess
@@ -16,7 +18,7 @@ def evaluate():
     # Run Stage 4
     for vid_id in videos:
         print(f"Running verification for {vid_id}...")
-        subprocess.run(["python", "generate_verification_report.py", "--input", f"output/{vid_id}_captions.json"], check=True)
+        subprocess.run(["python", "src/pipeline/stage4_verification.py", "--input", f"output/{vid_id}_captions.json"], check=True)
         
     # Evaluate
     results = []

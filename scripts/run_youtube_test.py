@@ -1,3 +1,5 @@
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 import os
 import argparse
 import subprocess
@@ -28,19 +30,19 @@ def main():
     captions_json = f"output/{vid_name}_captions.json"
 
     print(f"\n=== Running Stage 1: Captioning on {vid_path} ===")
-    subprocess.run(["python", "captioning.py", "--input", vid_path, "--output", "output"], check=True)
+    subprocess.run(["python", "src/pipeline/stage1_captioning.py", "--input", vid_path, "--output", "output"], check=True)
 
     print(f"\n=== Running Stage 2: Narrative Generation ===")
-    subprocess.run(["python", "generate_narrative.py", "--input", captions_json], check=True)
+    subprocess.run(["python", "src/pipeline/stage2_narrative.py", "--input", captions_json], check=True)
 
     print(f"\n=== Running Stage 3: Causal Narrative Generation ===")
-    subprocess.run(["python", "generate_causal_narrative.py", "--input", captions_json], check=True)
+    subprocess.run(["python", "src/pipeline/stage3_causal.py", "--input", captions_json], check=True)
 
     print(f"\n=== Running Stage 4: Verification Report ===")
-    subprocess.run(["python", "generate_verification_report.py", "--input", captions_json], check=True)
+    subprocess.run(["python", "src/pipeline/stage4_verification.py", "--input", captions_json], check=True)
 
     print(f"\n=== Running Stage 5: Explainability Report ===")
-    subprocess.run(["python", "generate_explainability_report.py", "--input", captions_json], check=True)
+    subprocess.run(["python", "src/pipeline/stage5_explainability.py", "--input", captions_json], check=True)
 
     print(f"\n=== Displaying Final Explained Output ===")
     md_path = f"output/{vid_name}_explained.md"

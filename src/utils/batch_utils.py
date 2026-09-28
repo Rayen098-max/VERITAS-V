@@ -1,10 +1,12 @@
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 import os
 import json
 import time
 import logging
 from openai import OpenAI
 from dotenv import load_dotenv
-from utils.chat_gpt_utils import TOTAL_TOKENS_USED, TOTAL_COST, calculate_token_cost
+from src.utils.chat_gpt_utils import TOTAL_TOKENS_USED, TOTAL_COST, calculate_token_cost
 
 load_dotenv()
 BATCH_INPUT_FILE = "batch_input.jsonl"

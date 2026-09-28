@@ -1,7 +1,9 @@
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 import os
 import json
 import logging
-from utils.chat_gpt_utils import caption_scene_with_images, safe_json_extract
+from src.utils.chat_gpt_utils import caption_scene_with_images, safe_json_extract
 
 # Common backend signature: (frame_paths: dict, transcript: str, **kwargs) -> (caption: str, keywords: list[str])
 
@@ -155,8 +157,8 @@ def qwen25vl_backend(frame_paths, transcript, **kwargs):
 
 def groq_backend(frame_paths, transcript, **kwargs):
     '''Caption a scene using Groq Vision API with failover.'''
-    from utils.groq_client import execute_with_groq_failover
-    from utils.chat_gpt_utils import build_prompt_and_images, safe_json_extract
+    from src.utils.groq_client import execute_with_groq_failover
+    from src.utils.chat_gpt_utils import build_prompt_and_images, safe_json_extract
     
     prompt, images = build_prompt_and_images(transcript, frame_paths)
     model = os.getenv("GROQ_VISION_MODEL", "llama-3.2-11b-vision-preview")

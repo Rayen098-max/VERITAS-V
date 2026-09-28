@@ -1,3 +1,5 @@
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 import os
 import logging
 
@@ -70,7 +72,7 @@ def llm_verification_backend(claims, scenes, **kwargs):
     '''Verify claims against frame images using a real vision-capable LLM via Groq API.'''
     import os
     import json
-    from utils.groq_client import execute_with_groq_failover
+    from src.utils.groq_client import execute_with_groq_failover
     model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
 
     results = []

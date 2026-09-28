@@ -1,10 +1,12 @@
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 import os
 import json
 import logging
 import argparse
 from dotenv import load_dotenv
-from utils.logging_utils import setup_logger
-from utils.explainability_styles import get_style
+from src.utils.logging_utils import setup_logger
+from src.utils.explainability_styles import get_style
 
 parser = argparse.ArgumentParser(description="Assemble the final evidence-annotated explained narrative")
 parser.add_argument("--input", required=True, help="Path to a <video>_captions.json file")

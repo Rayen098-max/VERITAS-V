@@ -1,3 +1,5 @@
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 import logging
 
 # Common backend signature: (scenes: dict, **kwargs) -> narrative: str
@@ -52,7 +54,7 @@ def mock_narrative_backend(scenes, **kwargs):
 def llm_narrative_backend(scenes, **kwargs):
     '''Generate a narrative using a real LLM via Groq API.'''
     import os
-    from utils.groq_client import execute_with_groq_failover
+    from src.utils.groq_client import execute_with_groq_failover
     model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
 
     scene_lines = []

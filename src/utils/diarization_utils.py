@@ -1,4 +1,6 @@
-from pyannote.audio import Pipeline
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+import osfrom pyannote.audio import Pipeline
 import logging
 
 def run_diarization(audio_path, token):
