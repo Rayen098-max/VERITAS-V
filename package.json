@@ -1,20 +1,22 @@
 {
-  "name": "tmp-vite",
+  "name": "veritas-frontend",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview"
   },
   "dependencies": {
+    "clsx": "^2.1.1",
     "framer-motion": "^13.1.1",
     "lucide-react": "^1.35.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.3"
+    "react-router-dom": "^7.18.3",
+    "recharts": "^2.15.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

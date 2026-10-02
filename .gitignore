@@ -44,3 +44,7 @@ dist-ssr/
 .stylelintcache
 
 speech.wav
+
+# Local agent & archive configs
+.agents/
+.archive/
