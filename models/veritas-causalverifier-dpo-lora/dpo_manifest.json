@@ -1,0 +1,10 @@
+{
+  "alignment_type": "Direct Preference Optimization (DPO)",
+  "base_model": "meta-llama/Llama-3.1-8B-Instruct",
+  "sft_adapter": "models/veritas-causalverifier-lora",
+  "num_preference_pairs": 96,
+  "beta": 0.1,
+  "learning_rate": 5e-06,
+  "epochs": 2,
+  "status": "configured_and_aligned"
+}

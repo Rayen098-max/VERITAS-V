@@ -7,6 +7,7 @@ import subprocess
 parser = argparse.ArgumentParser(description="End-to-End YouTube Custom Testing Script")
 parser.add_argument("--url", required=False, help="YouTube URL to download")
 parser.add_argument("--input", required=False, help="Local video file path")
+parser.add_argument("--backend", required=False, default=None, help="Backend: groq or mock (default: groq)")
 args = parser.parse_args()
 
 def main():
@@ -28,18 +29,19 @@ def main():
 
     vid_name = os.path.splitext(os.path.basename(vid_path))[0]
     captions_json = f"output/{vid_name}_captions.json"
+    backend_flag = ["--backend", args.backend] if args.backend else []
 
     print(f"\n=== Running Stage 1: Captioning on {vid_path} ===")
-    subprocess.run(["python", "src/pipeline/stage1_captioning.py", "--input", vid_path, "--output", "output"], check=True)
+    subprocess.run(["python", "src/pipeline/stage1_captioning.py", "--input", vid_path, "--output", "output"] + backend_flag, check=True)
 
     print(f"\n=== Running Stage 2: Narrative Generation ===")
-    subprocess.run(["python", "src/pipeline/stage2_narrative.py", "--input", captions_json], check=True)
+    subprocess.run(["python", "src/pipeline/stage2_narrative.py", "--input", captions_json] + backend_flag, check=True)
 
     print(f"\n=== Running Stage 3: Causal Narrative Generation ===")
-    subprocess.run(["python", "src/pipeline/stage3_causal.py", "--input", captions_json], check=True)
+    subprocess.run(["python", "src/pipeline/stage3_causal.py", "--input", captions_json] + backend_flag, check=True)
 
     print(f"\n=== Running Stage 4: Verification Report ===")
-    subprocess.run(["python", "src/pipeline/stage4_verification.py", "--input", captions_json], check=True)
+    subprocess.run(["python", "src/pipeline/stage4_verification.py", "--input", captions_json] + backend_flag, check=True)
 
     print(f"\n=== Running Stage 5: Explainability Report ===")
     subprocess.run(["python", "src/pipeline/stage5_explainability.py", "--input", captions_json], check=True)

@@ -1,49 +1,107 @@
 .
 ├── PROJECT_STRUCTURE.txt
-├── bath_input.jsonl
-├── captioning.py                     # Stage 1: scene detection, frames, transcription, captioning
-├── generate_narrative.py             # Stage 2: merge per-scene captions into one narrative
-├── generate_causal_narrative.py      # Stage 3: infer cause-effect links between scenes
-├── generate_verification_report.py   # Stage 4: verify causal claims against frame images
-├── generate_explainability_report.py # Stage 5: assemble final evidence-annotated report
-├── load_dataset_sample.py            # Downloads a small benchmark dataset sample (e.g. MSR-VTT)
-├── evaluate_captions.py              # Scores narrative output against ground truth (BLEU-4/ROUGE-L/METEOR)
-├── captions
-├── datasets
-│   ├── msrvtt
-│   │   ├── annotations       # Official annotation JSON (tracked)
-│   │   ├── videos             # Downloaded sample clips (gitignored)
-│   │   ├── ground_truth.json  # video_id -> reference caption(s), for scoring
-│   │   ├── msrvtt_evaluation.json # Per-video + averaged BLEU-4/ROUGE-L/METEOR scores (gitignored)
-│   │   └── msrvtt_evaluation.md   # Human-readable evaluation summary (gitignored)
-│   └── activitynet
-│       ├── annotations       # Official ActivityNet Captions JSON (tracked)
-│       ├── videos             # Empty for now - video download not yet implemented (gitignored)
-│       └── ground_truth.json  # video_id -> reference caption(s)/timestamps, for scoring
-├── diarization.py
-├── frames
-├── logs
-├── media
-├── output
+├── README.MD
 ├── requirements.txt
+├── package.json
+├── index.html
+├── vite.config.ts
+├── diarization.py                     # Audio diarization runner
+├── evaluate_captions.py               # Scores narrative output (BLEU-4/ROUGE-L/METEOR/CIDEr)
+├── load_dataset_sample.py             # Downloads benchmark dataset samples
 ├── speaker_map.json
-├── tmp
-├── transcripts
-├── .env
-├── .gitignore
-└── utils
-    ├── __pycache__
-    ├── batch_utils.py
-    ├── captioning_backends.py     # Backend adapters: gpt4o, mock, qwen25vl (stubbed)
-    ├── narrative_backends.py      # Backend adapters: mock, llm (stubbed)
-    ├── causal_backends.py         # Backend adapters: mock, llm (stubbed)
-    ├── verification_backends.py   # Backend adapters: mock, llm (stubbed)
-    ├── explainability_styles.py   # Styles: structured (deterministic), narrative_llm (stubbed)
-    ├── chat_gpt_utils.py
-    ├── diarization_utils.py
-    ├── extract_utils.py
-    ├── logging_utils.py
-    ├── speaker_utils.py
-    └── whisper_utils.py
-
-12 directories, 515 files
+│
+├── src/                               # Unified Application Root
+│   ├── pipeline/                      # 5-Stage Core Perception & Verification Pipeline
+│   │   ├── stage1_captioning.py       # Stage 1: PySceneDetect cuts, FFmpeg frames, Whisper transcription, VLM captioning
+│   │   ├── stage2_narrative.py        # Stage 2: Merge per-scene captions into chronological video narrative
+│   │   ├── stage3_causal.py           # Stage 3: Infer cause-effect relationships between consecutive scenes
+│   │   ├── stage4_verification.py     # Stage 4: Verify causal claims against scene frame images & flag hallucinations
+│   │   └── stage5_explainability.py   # Stage 5: Compile evidence-annotated forensic JSON & Markdown reports
+│   │
+│   ├── server/                        # FastAPI Bridge Server (Connects UI to Python Engine)
+│   │   ├── app.py                     # REST endpoints: /upload, /start, /status, /history, and static mounts
+│   │   └── parser.py                  # Translates output JSON artifacts into VideoAnalysis frontend schema
+│   │
+│   ├── services/                      # Frontend API Client Layer
+│   │   ├── api.ts                     # API base URL & mock toggle with offline fallback
+│   │   ├── analysisService.ts         # Service methods matching FastAPI endpoints
+│   │   └── mockData.ts
+│   │
+│   ├── pages/                         # React UI Pages (Tailwind v4 + Framer Motion)
+│   │   ├── HeroLanding.tsx            # Optical illusion background & product hero
+│   │   ├── Dashboard.tsx              # Analytics dashboard & pass/fail telemetry
+│   │   ├── NewAnalysis.tsx            # Live video upload & pipeline stage monitor
+│   │   ├── AnalysisResults.tsx        # Interactive causal graph, frame inspector & evidence modal
+│   │   ├── Benchmark.tsx              # Multi-dataset radar/bar comparative charts
+│   │   ├── History.tsx                # Forensic audit log
+│   │   ├── PipelineDetails.tsx        # Deep architectural specifications
+│   │   ├── ConfigInspector.tsx        # Active environment configuration inspector
+│   │   └── About.tsx
+│   │
+│   ├── components/                    # Reusable UI Components
+│   │   ├── CausalGraph.tsx            # SVG interactive causal flow visualizer
+│   │   ├── EvidenceModal.tsx          # Forensic claim inspection modal
+│   │   ├── FrameInspectorModal.tsx    # High-res keyframe viewer
+│   │   ├── Layout.tsx                 # App shell navigation
+│   │   └── Container.tsx
+│   │
+│   └── utils/                         # Pipeline Utility Modules & Backends
+│       ├── groq_client.py             # Groq client with multi-key failover & rate limit recovery
+│       ├── captioning_backends.py     # Backends: groq, gpt4o, qwen25vl, mock
+│       ├── narrative_backends.py      # Backends: groq, mock
+│       ├── causal_backends.py         # Backends: groq, mock
+│       ├── verification_backends.py   # Backends: groq (vision keyframes), mock
+│       ├── explainability_styles.py   # Structured dual-format compiler
+│       ├── whisper_utils.py           # Whisper audio transcriber & cache
+│       ├── diarization_utils.py       # Pyannote audio speaker diarization
+│       ├── speaker_utils.py           # Speaker map loader & matcher
+│       ├── extract_utils.py           # FFmpeg audio & frame extractors
+│       └── logging_utils.py
+│
+├── scripts/                           # Runners & Evaluation Harnesses
+│   ├── run_all_benchmarks.py          # Unified master runner across all 4 datasets
+│   ├── run_youtube_test.py            # End-to-end CLI video downloader and pipeline runner
+│   ├── evaluate_causal_reasoning.py   # NExT-QA causal accuracy benchmark
+│   ├── evaluate_hallucination_verification.py # VideoHallucer precision/recall/F1 benchmark
+│   ├── evaluate_llm_judge.py          # LLM-as-a-Judge 3-axis comparative evaluation
+│   │
+│   └── training/                      # Dual-Model Fine-Tuning & Alignment Engine
+│       ├── orchestrate_training.py    # Master 6-phase curriculum orchestrator CLI
+│       ├── expand_multimodal_dataset.py # Phase 1: 8-domain multimodal SFT generator
+│       ├── build_dpo_dataset.py       # Phase 2: 4-axis contrastive DPO triplet generator
+│       ├── validate_and_split_data.py # Phase 3: Stratified splitting & profiling
+│       ├── train_captioner.py         # Phase 4A: Qwen2.5-VL QLoRA fine-tuning
+│       ├── train_reasoner.py          # Phase 4B: Llama-3.1-8B QLoRA SFT fine-tuning
+│       ├── train_dpo_verifier.py      # Phase 4C: Direct Preference Optimization trainer
+│       ├── evaluate_checkpoints.py    # Phase 5A: Held-out test evaluation quality gate
+│       ├── merge_and_export.py        # Phase 5B: LoRA weight fusion & manifest export
+│       ├── stress_test_and_redteam.py # Phase 5C: Adversarial red-teaming & calibration
+│       └── VERITAS_V_Colab_FineTuning.ipynb # 1-click cloud GPU training notebook (A100)
+│
+├── data/                              # Training Datasets
+│   └── training/                      # SFT, DPO, and stratified splits
+│       ├── splits/                    # Train, validation, and test jsonl files
+│       ├── captioner_sft_expanded.jsonl
+│       ├── causal_verifier_sft_expanded.jsonl
+│       └── causal_verifier_dpo.jsonl
+│
+├── models/                            # Model Checkpoints & Fused Artifacts
+│   ├── registry/                      # Master manifest & SHA-256 checksums
+│   ├── veritas-captioner-lora/        # Captioner LoRA adapter configuration
+│   ├── veritas-causalverifier-lora/   # Causal verifier LoRA adapter configuration
+│   └── fused/                         # Fused standalone safetensors & quant configs
+│
+├── datasets/                          # Benchmark Datasets & Ground Truth
+│   ├── msrvtt/
+│   ├── nextqa/
+│   ├── videohallucer/
+│   └── activitynet/
+│
+├── tests/                             # Automated Unit & Integration Tests
+│   ├── test_pipeline.py               # Unit tests for Stages 1-5 & CIDEr metric
+│   └── test_api.py                    # Integration tests for FastAPI endpoints
+│
+├── media/                             # Uploaded & Sample Videos
+├── frames/                            # Extracted Keyframes
+├── output/                            # Generated Forensic Artifacts (JSON & MD)
+└── logs/                              # Execution Logs

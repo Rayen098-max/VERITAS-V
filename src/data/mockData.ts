@@ -593,6 +593,116 @@ export const BENCHMARK_SCORES: BenchmarkScoreRecord[] = [
     rouge_l: 0.609,
     meteor: 0.435,
     hallucination_rate: 0.04
+  },
+  {
+    video_id: 'vh_vid1',
+    dataset: 'VideoHallucer',
+    duration: 8.5,
+    ground_truth_reference: 'The video shows a dog running in vh_vid1. False prompt claim: The video shows a flying car.',
+    generated_narrative: 'A dog sprints actively across an open grass field. Cross-examination rejected and purged the contradicted flying vehicle claim.',
+    bleu_4: 0.445,
+    rouge_l: 0.680,
+    meteor: 0.490,
+    hallucination_rate: 0.00
+  },
+  {
+    video_id: 'vh_vid2',
+    dataset: 'VideoHallucer',
+    duration: 10.2,
+    ground_truth_reference: 'The video shows a dog running in vh_vid2. False prompt claim: The video shows a flying car.',
+    generated_narrative: 'Canine moves continuously across an outdoor lawn while chasing a thrown ball. Flying car assertion was identified as ungrounded and eliminated.',
+    bleu_4: 0.432,
+    rouge_l: 0.671,
+    meteor: 0.482,
+    hallucination_rate: 0.00
+  },
+  {
+    video_id: 'vh_vid3',
+    dataset: 'VideoHallucer',
+    duration: 9.1,
+    ground_truth_reference: 'The video shows a dog running in vh_vid3. False prompt claim: The video shows a flying car.',
+    generated_narrative: 'A dog runs and retrieves an object on turf. Verified supported for canine locomotion and successfully contradicted for aerial vehicle.',
+    bleu_4: 0.450,
+    rouge_l: 0.692,
+    meteor: 0.495,
+    hallucination_rate: 0.00
+  },
+  {
+    video_id: 'vh_vid4',
+    dataset: 'VideoHallucer',
+    duration: 11.4,
+    ground_truth_reference: 'The video shows a dog running in vh_vid4. False prompt claim: The video shows a flying car.',
+    generated_narrative: 'Pet executes rapid sprint toward goal on grass. Ground truth verified; extraneous airborne hallucination successfully purged with 100% precision.',
+    bleu_4: 0.439,
+    rouge_l: 0.668,
+    meteor: 0.478,
+    hallucination_rate: 0.00
+  },
+  {
+    video_id: 'vh_vid5',
+    dataset: 'VideoHallucer',
+    duration: 7.8,
+    ground_truth_reference: 'The video shows a dog running in vh_vid5. Benchmark stress test for boundary confidence.',
+    generated_narrative: 'Canine sprint sequence across park surface with verified keyframe grounding.',
+    bleu_4: 0.410,
+    rouge_l: 0.635,
+    meteor: 0.460,
+    hallucination_rate: 0.04
+  },
+  {
+    video_id: 'nextqa_vid1',
+    dataset: 'NExT-QA',
+    duration: 14.5,
+    ground_truth_reference: 'A child kicks a soccer ball into the goal net and celebrates with teammates.',
+    generated_narrative: 'A young player takes an acceleration approach, strikes the soccer ball past the goalie, and raises arms in celebration with teammates.',
+    bleu_4: 0.415,
+    rouge_l: 0.640,
+    meteor: 0.452,
+    hallucination_rate: 0.02
+  },
+  {
+    video_id: 'nextqa_vid2',
+    dataset: 'NExT-QA',
+    duration: 18.0,
+    ground_truth_reference: 'A person pours water onto coffee grounds in a drip filter maker causing steam to rise.',
+    generated_narrative: 'A barista pours hot water in concentric circles over ground coffee, resulting in percolation and rising steam into the glass carafe.',
+    bleu_4: 0.422,
+    rouge_l: 0.655,
+    meteor: 0.461,
+    hallucination_rate: 0.03
+  },
+  {
+    video_id: 'nextqa_vid3',
+    dataset: 'NExT-QA',
+    duration: 22.3,
+    ground_truth_reference: 'A cat stalks a toy mouse across a rug, pounces, and carries it under a chair.',
+    generated_narrative: 'A cat lowers its body posture, creeps toward a motorized toy on the carpet, launches forward to pin it, and retreats under furniture.',
+    bleu_4: 0.405,
+    rouge_l: 0.630,
+    meteor: 0.448,
+    hallucination_rate: 0.05
+  },
+  {
+    video_id: 'nextqa_vid4',
+    dataset: 'NExT-QA',
+    duration: 16.7,
+    ground_truth_reference: 'A skater balances on the curb rail, grinds along the edge, and lands back onto the pavement.',
+    generated_narrative: 'A skateboarder hops onto the metallic rail, balances the trucks along the edge, and dismounts cleanly with both feet on the deck.',
+    bleu_4: 0.398,
+    rouge_l: 0.622,
+    meteor: 0.439,
+    hallucination_rate: 0.04
+  },
+  {
+    video_id: 'nextqa_vid5',
+    dataset: 'NExT-QA',
+    duration: 19.4,
+    ground_truth_reference: 'A baker kneads dough on a floured wooden counter before shaping it into a loaf.',
+    generated_narrative: 'A baker folds and presses sourdough dough repeatedly on a floured marble station, rounds it into a tight ball, and places it in a proofing basket.',
+    bleu_4: 0.430,
+    rouge_l: 0.662,
+    meteor: 0.469,
+    hallucination_rate: 0.01
   }
 ];
 

@@ -1,287 +1,193 @@
 import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  Video, 
-  History, 
-  GitFork, 
-  Info, 
-  Cpu, 
-  Radio, 
-  Database,
-  BarChart3,
-  Sliders,
-  Sparkles
-} from 'lucide-react';
-import { USE_MOCK_DATA } from '../services/api';
-import { analysisService } from '../services/analysisService';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Sun, Moon, Menu, X, ShieldCheck } from 'lucide-react';
+import Footer from './Footer';
 
 export default function Layout() {
   const location = useLocation();
-  const [status, setStatus] = useState<'connected' | 'processing' | 'demo' | 'error'>('demo');
-  const [isDemoMode, setIsDemoMode] = useState(USE_MOCK_DATA);
-
-  // Monitor processing pipelines to update sidebar status
-  useEffect(() => {
-    const checkPipelines = async () => {
-      try {
-        const history = await analysisService.getHistory();
-        const processing = history.some(a => a.status === 'processing');
-        
-        if (processing) {
-          setStatus('processing');
-        } else if (isDemoMode) {
-          setStatus('demo');
-        } else {
-          // Check backend connection in real mode
-          try {
-            const res = await fetch('http://127.0.0.1:8000/api/health', { signal: AbortSignal.timeout(1000) });
-            if (res.ok) {
-              setStatus('connected');
-            } else {
-              setStatus('error');
-            }
-          } catch {
-            setStatus('error');
-          }
-        }
-      } catch {
-        setStatus('error');
-      }
-    };
-
-    checkPipelines();
-    const interval = setInterval(checkPipelines, 3000);
-    return () => clearInterval(interval);
-  }, [isDemoMode]);
-
-  const getStatusBadge = () => {
-    switch (status) {
-      case 'connected':
-        return (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs">
-            <span className="w-2 h-2 rounded-full pulse-green"></span>
-            Connected
-          </div>
-        );
-      case 'processing':
-        return (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-medium">
-            <span className="w-2 h-2 rounded-full pulse-blue"></span>
-            Agent pipeline active
-          </div>
-        );
-      case 'error':
-        return (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
-            <span className="w-2 h-2 rounded-full pulse-red"></span>
-            Backend offline
-          </div>
-        );
-      case 'demo':
-      default:
-        return (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-semibold">
-            <span className="w-2 h-2 rounded-full pulse-yellow"></span>
-            Demo Mode (Mock)
-          </div>
-        );
+  const [scrolled, setScrolled] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    try {
+      const stored = localStorage.getItem('veritas_theme');
+      if (stored === 'light' || stored === 'dark') return stored;
+    } catch {
+      // ignore
     }
+    // Default to dark as requested for cinematic studio look
+    return 'dark';
+  });
+
+  // Apply theme to document element
+  useEffect(() => {
+    try {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('veritas_theme', theme);
+    } catch {
+      // ignore
+    }
+  }, [theme]);
+
+  // Track window scroll for nav transformation
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 30);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const toggleTheme = () => {
+    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
   };
 
+  const navLinks = [
+    { name: 'Home', path: '/' },
+    { name: 'Dashboard', path: '/dashboard' },
+    { name: 'New Analysis', path: '/new-analysis' },
+    { name: 'Pipeline', path: '/pipeline' },
+    { name: 'Benchmarks', path: '/benchmarks' },
+    { name: 'About', path: '/about' },
+  ];
+
   return (
-    <div className="relative h-screen w-screen overflow-hidden text-[#f3f4f6]">
-      {/* Live Optical Illusion Video Background */}
-      <video
-        autoPlay
-        loop
-        muted
-        playsInline
-        className="fixed inset-0 w-full h-full object-cover z-0 pointer-events-none select-none"
-        src="/hypnotic1.mp4"
-      />
-
-      {/* Subtle Glassmorphic Dark Overlay Scrim */}
-      <div className="fixed inset-0 bg-[#070b14]/75 backdrop-blur-[2.5px] z-0 pointer-events-none" />
-
-      {/* Main App Layout Grid */}
-      <div className="flex h-full w-full relative z-10">
-        {/* Persistent Glassmorphism Sidebar */}
-        <aside className="w-64 flex flex-col border-r border-slate-800/70 bg-[#0d1321]/75 backdrop-blur-xl flex-shrink-0">
-          {/* Sidebar Header */}
-          <div className="p-6 border-b border-slate-800/70">
-            <div className="flex items-center gap-2.5 mb-2">
-              <div className="p-2 rounded-lg bg-indigo-500/15 border border-indigo-500/30 shadow-lg shadow-indigo-500/10">
-                <Cpu className="w-5 h-5 text-indigo-400" />
-              </div>
-              <span className="font-bold text-sm tracking-wide text-indigo-200">VERITAS-V</span>
+    <div className="relative min-h-screen w-full bg-[var(--bg-primary)] text-[var(--text-primary)] flex flex-col font-sans transition-colors duration-200">
+      {/* Floating Top Navigation Bar */}
+      <header className="fixed top-0 left-0 right-0 z-50 px-4 sm:px-6 pt-3 pointer-events-none">
+        <nav
+          className={`max-w-5xl mx-auto rounded-[20px] pointer-events-auto border transition-all duration-300 px-4 sm:px-5 flex items-center justify-between ${
+            scrolled
+              ? 'py-2.5 bg-[var(--nav-bg)] backdrop-blur-xl border-[var(--border-default)] shadow-[0_8px_30px_rgba(0,0,0,0.12)]'
+              : 'py-3.5 bg-[var(--nav-bg)] backdrop-blur-md border-[var(--border-default)] shadow-[0_2px_12px_rgba(0,0,0,0.04)]'
+          }`}
+        >
+          {/* Logo & Brand */}
+          <NavLink to="/" className="flex items-center gap-2.5 group shrink-0">
+            <div className="w-8 h-8 rounded-full overflow-hidden border border-[var(--border-default)] bg-black flex items-center justify-center shadow-xs transition-transform duration-200 group-hover:scale-105">
+              <img
+                src="/logo.webp"
+                alt="VERITAS-V Logo"
+                className="w-full h-full object-cover"
+              />
             </div>
-            <h1 className="font-bold text-sm text-slate-100 leading-tight">
-              Agentic Vision-Language Framework
-            </h1>
-            <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider font-semibold">
-              Causal Video Understanding
-            </p>
+            <div className="flex flex-col">
+              <span className="font-extrabold text-sm sm:text-base tracking-tight text-[var(--text-primary)] flex items-center gap-1.5">
+                VERITAS-V
+                <span className="w-1.5 h-1.5 rounded-full bg-[#6D5EF5] animate-pulse" />
+              </span>
+            </div>
+          </NavLink>
+
+          {/* Centered Navigation Links with Sliding Active Pill */}
+          <div className="hidden md:flex items-center gap-1 p-1 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-subtle)]">
+            {navLinks.map((link) => {
+              const isActive =
+                link.path === '/'
+                  ? location.pathname === '/'
+                  : location.pathname.startsWith(link.path);
+
+              return (
+                <NavLink
+                  key={link.path}
+                  to={link.path}
+                  className="relative px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors select-none"
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="activeNavPill"
+                      className="absolute inset-0 rounded-full bg-[var(--text-primary)] shadow-xs"
+                      transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                    />
+                  )}
+                  <span
+                    className={`relative z-10 ${
+                      isActive
+                        ? 'text-[var(--bg-primary)] font-semibold'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    {link.name}
+                  </span>
+                </NavLink>
+              );
+            })}
           </div>
 
-          {/* Sidebar Navigation */}
-          <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto custom-scrollbar">
-            <NavLink
-              to="/"
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
-                  isActive
-                    ? 'bg-indigo-500/20 text-indigo-300 border-l-2 border-indigo-400 pl-3.5 shadow-md shadow-indigo-500/5'
-                    : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'
-                }`
-              }
+          {/* Right Controls: Theme Toggle & Mobile Hamburger */}
+          <div className="flex items-center gap-2">
+            {/* Theme Toggle Button */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] transition-colors border border-transparent hover:border-[var(--border-default)] cursor-pointer"
             >
-              <LayoutDashboard className="w-4 h-4" />
-              Dashboard
-            </NavLink>
+              {theme === 'dark' ? (
+                <Sun className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Moon className="w-4 h-4 text-indigo-600" />
+              )}
+            </button>
 
-            <NavLink
-              to="/new-analysis"
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
-                  isActive
-                    ? 'bg-indigo-500/20 text-indigo-300 border-l-2 border-indigo-400 pl-3.5 shadow-md shadow-indigo-500/5'
-                    : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'
-                }`
-              }
+            {/* Mobile Hamburger Toggle */}
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(prev => !prev)}
+              aria-label="Toggle navigation menu"
+              className="md:hidden w-8 h-8 rounded-full flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] border border-[var(--border-default)] cursor-pointer"
             >
-              <Video className="w-4 h-4" />
-              New Analysis
-            </NavLink>
-
-            <NavLink
-              to="/history"
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
-                  isActive
-                    ? 'bg-indigo-500/20 text-indigo-300 border-l-2 border-indigo-400 pl-3.5 shadow-md shadow-indigo-500/5'
-                    : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'
-                }`
-              }
-            >
-              <History className="w-4 h-4" />
-              Analysis History
-            </NavLink>
-
-            <NavLink
-              to="/pipeline"
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
-                  isActive
-                    ? 'bg-indigo-500/20 text-indigo-300 border-l-2 border-indigo-400 pl-3.5 shadow-md shadow-indigo-500/5'
-                    : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'
-                }`
-              }
-            >
-              <GitFork className="w-4 h-4" />
-              Pipeline Details
-            </NavLink>
-
-            <NavLink
-              to="/benchmarks"
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
-                  isActive
-                    ? 'bg-indigo-500/20 text-indigo-300 border-l-2 border-indigo-400 pl-3.5 shadow-md shadow-indigo-500/5'
-                    : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'
-                }`
-              }
-            >
-              <BarChart3 className="w-4 h-4" />
-              Benchmarks (MSR-VTT)
-            </NavLink>
-
-            <NavLink
-              to="/config"
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
-                  isActive
-                    ? 'bg-indigo-500/20 text-indigo-300 border-l-2 border-indigo-400 pl-3.5 shadow-md shadow-indigo-500/5'
-                    : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'
-                }`
-              }
-            >
-              <Sliders className="w-4 h-4" />
-              Config Inspector
-            </NavLink>
-
-            <NavLink
-              to="/about"
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
-                  isActive
-                    ? 'bg-indigo-500/20 text-indigo-300 border-l-2 border-indigo-400 pl-3.5 shadow-md shadow-indigo-500/5'
-                    : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'
-                }`
-              }
-            >
-              <Info className="w-4 h-4" />
-              About Project
-            </NavLink>
-          </nav>
-
-          {/* Sidebar Footer Status Indicator */}
-          <div className="p-4 border-t border-slate-800/70 bg-[#0a0e19]/80 backdrop-blur-md">
-            <div className="text-[11px] text-slate-500 uppercase tracking-wider mb-2 font-bold">
-              System Status
-            </div>
-            <div className="flex items-center justify-between">
-              {getStatusBadge()}
-              
-              {/* Interactive Demo/API switch for presentation fallback */}
-              <button
-                onClick={() => setIsDemoMode(!isDemoMode)}
-                className="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
-                title="Toggle API / Demo Mode"
-              >
-                <Database className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            <div className="text-[9px] text-slate-500 mt-2 font-mono text-center">
-              BE Project Viva Demo • v1.0.0
-            </div>
+              {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+            </button>
           </div>
-        </aside>
+        </nav>
 
-        {/* Main Workspace */}
-        <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-transparent custom-scrollbar">
-          {/* Header Bar */}
-          <header className="h-16 border-b border-slate-800/70 px-8 flex items-center justify-between flex-shrink-0 bg-[#0d1321]/65 backdrop-blur-xl sticky top-0 z-40">
-            <div>
-              <h2 className="text-sm font-bold text-slate-200 flex items-center gap-2">
-                {location.pathname === '/' && 'System Dashboard'}
-                {location.pathname === '/new-analysis' && 'New Video Analysis'}
-                {location.pathname.startsWith('/results') && 'Analysis Results'}
-                {location.pathname === '/history' && 'Analysis History'}
-                {location.pathname === '/pipeline' && 'Framework Architecture'}
-                {location.pathname === '/benchmarks' && 'Quantitative Benchmark Engine'}
-                {location.pathname === '/config' && 'Runtime Schemas & Environment Validator'}
-                {location.pathname === '/about' && 'About Framework'}
-              </h2>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/25 text-[11px] text-indigo-300 font-mono">
-                <Sparkles className="w-3 h-3 text-indigo-400 animate-spin" />
-                <span>Optical Illusion BG Live</span>
-              </div>
-              <div className="text-xs text-slate-400 flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-800/60 border border-slate-700/60">
-                <Radio className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
-                <span>Status: {status.toUpperCase()}</span>
-              </div>
-            </div>
-          </header>
+        {/* Mobile Dropdown Menu */}
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="md:hidden mt-2 max-w-5xl mx-auto rounded-[16px] bg-[var(--nav-bg)] backdrop-blur-2xl border border-[var(--border-default)] shadow-xl p-3 pointer-events-auto"
+            >
+              <div className="flex flex-col gap-1">
+                {navLinks.map((link) => {
+                  const isActive =
+                    link.path === '/'
+                      ? location.pathname === '/'
+                      : location.pathname.startsWith(link.path);
 
-          {/* Content Outlet */}
-          <div className="flex-1 p-8 overflow-y-auto custom-scrollbar">
-            <Outlet />
-          </div>
-        </main>
-      </div>
+                  return (
+                    <NavLink
+                      key={link.path}
+                      to={link.path}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={`px-4 py-2.5 rounded-[10px] text-xs font-medium flex items-center justify-between transition-colors ${
+                        isActive
+                          ? 'bg-[var(--text-primary)] text-[var(--bg-primary)] font-semibold'
+                          : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'
+                      }`}
+                    >
+                      <span>{link.name}</span>
+                      {isActive && <ShieldCheck className="w-3.5 h-3.5 text-[#10B981]" />}
+                    </NavLink>
+                  );
+                })}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </header>
+
+      {/* Main Page Content - Offset 96px so content never clips under the floating navbar */}
+      <main className="flex-1 relative z-10 w-full pt-[88px] sm:pt-[96px] flex flex-col">
+        <Outlet />
+      </main>
+
+      {/* Global Studio Footer on Every Page */}
+      <Footer />
     </div>
   );
 }

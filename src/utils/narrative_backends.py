@@ -65,8 +65,13 @@ def llm_narrative_backend(scenes, **kwargs):
             f"Caption: {scene.get('caption', '')} | Action Summary: {scene.get('action_summary', '')} | Transcript: {scene.get('transcript_text', '')}"
         )
     prompt = (
-        "Merge the following per-scene descriptions of a video into a single coherent "
-        "narrative paragraph describing the video as a continuous story:\n\n"
+        "You are VERITAS-V Forensic Activity Synthesis Engine.\n"
+        "Synthesize the following per-scene chronological events into a coherent, highly grounded forensic activity narrative.\n\n"
+        "STRICT FORENSIC GROUNDING RULES:\n"
+        "1. Describe ONLY actions, physical interactions, and audible speech directly recorded in the scene captions and transcripts.\n"
+        "2. ANTI-FLUFF: Do NOT extrapolate motives, fictional backstories, or unverified claims (e.g. do not invent scores, intentions, or external facts).\n"
+        "3. Explicitly reference temporal timestamps (e.g., [00:00-00:05]) for key physical transitions.\n\n"
+        "Input Scene Evidence:\n"
         + "\n".join(scene_lines)
     )
     
@@ -83,6 +88,8 @@ def llm_narrative_backend(scenes, **kwargs):
 BACKENDS = {
     "mock": mock_narrative_backend,
     "llm": llm_narrative_backend,
+    "groq": llm_narrative_backend,
+    "veritas_local": mock_narrative_backend,
 }
 
 

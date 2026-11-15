@@ -5,11 +5,18 @@ import logging
 from pathlib import Path
 from dotenv import load_dotenv
 
-from utils.logging_utils import setup_logger
-from utils.extract_utils import extract_audio
-from utils.whisper_utils import run_whisper
-from utils.diarization_utils import run_diarization
-from utils.speaker_utils import load_speaker_map, match_speakers
+try:
+    from src.utils.logging_utils import setup_logger
+    from src.utils.extract_utils import extract_audio
+    from src.utils.whisper_utils import run_whisper
+    from src.utils.diarization_utils import run_diarization
+    from src.utils.speaker_utils import load_speaker_map, match_speakers
+except ImportError:
+    from utils.logging_utils import setup_logger
+    from utils.extract_utils import extract_audio
+    from utils.whisper_utils import run_whisper
+    from utils.diarization_utils import run_diarization
+    from utils.speaker_utils import load_speaker_map, match_speakers
 
 # === Load environment variables ===
 load_dotenv()

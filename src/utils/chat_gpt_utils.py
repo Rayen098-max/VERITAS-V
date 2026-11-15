@@ -38,10 +38,10 @@ def build_prompt_and_images(transcript_text, frames):
     )
 
     image_inputs = []
-    # To avoid Groq 3 image max limit, select up to 3 evenly spaced frames
+    # Select 1-2 representative frames to stay safely within token and rate limits
     frame_list = list(frames.values())
-    if len(frame_list) > 3:
-        indices = [0, len(frame_list) // 2, len(frame_list) - 1]
+    if len(frame_list) > 1:
+        indices = [len(frame_list) // 2]
         frame_list = [frame_list[i] for i in indices]
         
     for p in frame_list:
@@ -53,7 +53,7 @@ def build_prompt_and_images(transcript_text, frames):
 
 # Convert image to base64 for OpenAI API
 def encode_image_to_base64(path):
-    '''Encode an image file to base64 string, downscaled to max 1024px.'''
+    '''Encode an image file to base64 string, downscaled to max 512px.'''
     from PIL import Image
     import io
     
@@ -62,9 +62,9 @@ def encode_image_to_base64(path):
         return None
     try:
         with Image.open(path) as img:
-            img.thumbnail((1024, 1024))
+            img.thumbnail((512, 512))
             buffer = io.BytesIO()
-            img.save(buffer, format="JPEG")
+            img.save(buffer, format="JPEG", quality=85)
             return base64.b64encode(buffer.getvalue()).decode("utf-8")
     except Exception as e:
         logging.error(f"Failed to encode image {path}: {e}")

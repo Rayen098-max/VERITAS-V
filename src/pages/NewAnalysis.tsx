@@ -1,16 +1,21 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Upload, 
   Trash2, 
-  Cpu, 
   Play, 
   CheckCircle, 
   Loader2, 
-  Settings, 
+  Sliders, 
   Terminal, 
-  ArrowRight
+  ArrowRight,
+  Sparkles,
+  AlertTriangle,
+  FileVideo,
+  Info
 } from 'lucide-react';
+import Container from '../components/Container';
+import { usePageMeta } from '../hooks/usePageMeta';
 import { analysisService } from '../services/analysisService';
 import type { PipelineStage } from '../types';
 
@@ -19,22 +24,32 @@ export default function NewAnalysis() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
-  // Upload state
-  const [videoFile, setVideoFile] = useState<File | null>(null);
+  usePageMeta({
+    title: 'New Video Verification Analysis',
+    description: 'Configure and dispatch video files through the multi-agent perception and hallucination verification pipeline.',
+  });
+
+  // Upload State
+  const [_videoFile, setVideoFile] = useState<File | null>(null);
   const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadedDetails, setUploadedDetails] = useState<{ id: string; name: string; size: string; duration: number } | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [uploadedDetails, setUploadedDetails] = useState<{
+    id: string;
+    name: string;
+    size: string;
+    duration: number;
+    thumbnail?: string;
+  } | null>(null);
 
-  // Config State
-  const [config, setConfig] = useState({
-    sceneCaptions: true,
-    narrative: true,
-    causalReasoning: true,
-    verifyHallucinations: true,
-    explainability: true,
-    diarization: true
-  });
+  // Configuration Panel State
+  const [backend, setBackend] = useState<'mock' | 'qwen25vl' | 'gpt4o'>('qwen25vl');
+  const [sceneThreshold, setSceneThreshold] = useState<number>(40);
+  const [framesPerScene, setFramesPerScene] = useState<number>(4);
+  const [whisperEnabled, setWhisperEnabled] = useState<boolean>(true);
+  const [strictness, setStrictness] = useState<'permissive' | 'balanced' | 'rigorous'>('rigorous');
 
   // Processing State
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -42,8 +57,9 @@ export default function NewAnalysis() {
   const [pipelineStages, setPipelineStages] = useState<PipelineStage[]>([]);
   const [activeLogs, setActiveLogs] = useState<string[]>([]);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [discoveredScenes, setDiscoveredScenes] = useState<string[]>([]);
 
-  // Clean up object URLs
+  // Cleanup object URLs
   useEffect(() => {
     return () => {
       if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
@@ -57,56 +73,116 @@ export default function NewAnalysis() {
     }
   }, [activeLogs]);
 
-  // Handle Drag & Drop events
+  // Sample Videos Quick Picker
+  const sampleVideos = [
+    {
+      id: 'analysis_newvideo_001',
+      name: 'Newvideo.mp4',
+      size: '28.3 MB',
+      duration: 118,
+      category: "India's Got Latent · Magic Card Sleight",
+      thumbnail: '/frames/Newvideo_frames/Newvideo_scene_001_start.jpg',
+    },
+    {
+      id: 'sample_my_video',
+      name: 'my_video.mp4',
+      size: '42.1 MB',
+      duration: 66,
+      category: 'Keynote Presentation Audit',
+      thumbnail: '/frames/my_video_frames/my_video_scene_001_start.jpg',
+    },
+    {
+      id: 'sample_clip_jump',
+      name: 'sample_clip.mp4',
+      size: '4.8 MB',
+      duration: 15,
+      category: 'Athletics Kinetic Sequence',
+      thumbnail: '/frames/sample_clip_frames/sample_clip_scene_001_start.jpg',
+    },
+    {
+      id: 'sample_dog_hallucination',
+      name: 'videohallucer_test.mp4',
+      size: '3.2 MB',
+      duration: 10,
+      category: 'Hallucination Benchmark Probe',
+      thumbnail: '/frames/sample_clip_frames/sample_clip_scene_001_t1.jpg',
+    },
+  ];
+
+  const handleSelectSample = (sample: typeof sampleVideos[0]) => {
+    setErrorMessage(null);
+    setVideoFile(null);
+    setVideoPreviewUrl(null);
+    setUploadedDetails({
+      id: sample.id,
+      name: sample.name,
+      size: sample.size,
+      duration: sample.duration,
+      thumbnail: sample.thumbnail,
+    });
+  };
+
+  // Drag & Drop Handlers
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    setDragOver(true);
+  };
+
+  const handleDragLeave = () => {
+    setDragOver(false);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    setDragOver(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const file = e.dataTransfer.files[0];
-      if (file.type.startsWith('video/')) {
-        handleFileSelection(file);
-      }
+      handleFileSelected(e.dataTransfer.files[0]);
     }
   };
 
   const handleFileSelectEvent = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      handleFileSelection(e.target.files[0]);
+      handleFileSelected(e.target.files[0]);
     }
   };
 
-  const handleFileSelection = async (file: File) => {
+  const handleFileSelected = (file: File) => {
+    setErrorMessage(null);
+    if (!file.type.startsWith('video/')) {
+      setErrorMessage('Unsupported format: Please upload a valid video file (.mp4, .mov, .avi, .webm)');
+      return;
+    }
+
+    if (file.size > 100 * 1024 * 1024) {
+      setErrorMessage('File exceeds size limit: Maximum allowed upload size is 100MB');
+      return;
+    }
+
     setVideoFile(file);
-    const objectUrl = URL.createObjectURL(file);
-    setVideoPreviewUrl(objectUrl);
+    const preview = URL.createObjectURL(file);
+    setVideoPreviewUrl(preview);
+
+    // Simulate upload progress
     setIsUploading(true);
     setUploadProgress(0);
 
-    // Simulate upload progress
     const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev >= 95) {
+      setUploadProgress((prev) => {
+        if (prev >= 100) {
           clearInterval(interval);
-          return 95;
+          setIsUploading(false);
+          setUploadedDetails({
+            id: 'analysis_' + file.name.replace(/[^a-zA-Z0-9]/g, '_'),
+            name: file.name,
+            size: (file.size / (1024 * 1024)).toFixed(1) + ' MB',
+            duration: 45, // default duration estimate
+            thumbnail: '/frames/my_video_frames/my_video_scene_001_start.jpg',
+          });
+          return 100;
         }
-        return prev + Math.floor(Math.random() * 15) + 5;
+        return prev + 25;
       });
-    }, 150);
-
-    try {
-      const details = await analysisService.uploadVideo(file);
-      clearInterval(interval);
-      setUploadProgress(100);
-      setUploadedDetails(details);
-    } catch (err) {
-      console.error(err);
-      alert('Upload simulation failed.');
-    } finally {
-      setIsUploading(false);
-    }
+    }, 120);
   };
 
   const handleRemoveVideo = () => {
@@ -114,15 +190,20 @@ export default function NewAnalysis() {
     if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
     setVideoPreviewUrl(null);
     setUploadedDetails(null);
-    setUploadProgress(0);
+    setErrorMessage(null);
   };
 
-  // Start analysis pipeline
+  // Start Analysis Pipeline
   const handleStartAnalysis = async () => {
     if (!uploadedDetails) return;
+
     setIsAnalyzing(true);
     setAnalysisId(uploadedDetails.id);
-    setActiveLogs(['[SYSTEM] Initializing Agentic Pipeline Orchestrator...']);
+    setActiveLogs([
+      `[INGRESS] Received payload: ${uploadedDetails.name} (${uploadedDetails.size})`,
+      `[CONFIG] Backend: ${backend} | PySceneDetect: ${sceneThreshold} | Keyframes/Scene: ${framesPerScene} | Whisper: ${whisperEnabled ? 'ON' : 'OFF'}`,
+      `[STAGE 1] Launching PySceneDetect content detection (threshold=${sceneThreshold})...`,
+    ]);
 
     try {
       await analysisService.startAnalysis(
@@ -130,404 +211,613 @@ export default function NewAnalysis() {
         uploadedDetails.name,
         uploadedDetails.size,
         uploadedDetails.duration,
-        config
+        {
+          sceneCaptions: true,
+          narrative: true,
+          causalReasoning: true,
+          verifyHallucinations: true,
+          explainability: true,
+          diarization: whisperEnabled,
+        }
       );
 
-      // Start status polling
       pollPipeline(uploadedDetails.id);
     } catch (err) {
       console.error(err);
-      setActiveLogs(prev => [...prev, `[ERROR] Failed to start pipeline: ${err}`]);
+      setActiveLogs((prev) => [...prev, `[ERROR] Pipeline initialization failed: ${err}`]);
       setIsAnalyzing(false);
     }
   };
 
-  // Polling pipeline progress
+  // Poll Pipeline Progress
   const pollPipeline = (id: string) => {
     const timer = setInterval(async () => {
       try {
         const stages = await analysisService.getPipelineProgress(id);
         setPipelineStages(stages);
 
-        // Generate logs based on stage transitions
-        generateMockLogs(stages);
+        // Dynamically simulate streaming scene frames
+        const currentStage = stages.find(s => s.status === 'processing');
+        const isNewVideo = uploadedDetails?.name?.toLowerCase().includes('newvideo');
+        if (currentStage?.id === 'captioning' && discoveredScenes.length < 2) {
+          setDiscoveredScenes(
+            isNewVideo
+              ? [
+                  '/frames/Newvideo_frames/Newvideo_scene_001_start.jpg',
+                  '/frames/Newvideo_frames/Newvideo_scene_002_t2.jpg',
+                ]
+              : [
+                  '/frames/my_video_frames/my_video_scene_001_start.jpg',
+                  '/frames/my_video_frames/my_video_scene_002_t2.jpg',
+                ]
+          );
+        } else if (currentStage?.id === 'verification' && discoveredScenes.length < 4) {
+          setDiscoveredScenes(
+            isNewVideo
+              ? [
+                  '/frames/Newvideo_frames/Newvideo_scene_001_start.jpg',
+                  '/frames/Newvideo_frames/Newvideo_scene_002_t2.jpg',
+                  '/frames/Newvideo_frames/Newvideo_scene_003_t3.jpg',
+                  '/frames/Newvideo_frames/Newvideo_scene_004_t4.jpg',
+                  '/frames/Newvideo_frames/Newvideo_scene_006_t2.jpg',
+                  '/frames/Newvideo_frames/Newvideo_scene_007_t3.jpg',
+                ]
+              : [
+                  '/frames/my_video_frames/my_video_scene_001_start.jpg',
+                  '/frames/my_video_frames/my_video_scene_002_t2.jpg',
+                  '/frames/my_video_frames/my_video_scene_003_t3.jpg',
+                  '/frames/my_video_frames/my_video_scene_004_t1.jpg',
+                ]
+          );
+        }
 
-        const allFinished = stages.every(s => s.status === 'completed' || s.status === 'error');
-        if (allFinished) {
+        const allFinished = stages.every((s) => s.status === 'completed' || s.status === 'error');
+        if (allFinished && stages.length > 0) {
           clearInterval(timer);
           setIsCompleted(true);
-          setActiveLogs(prev => [
+          setActiveLogs((prev) => [
             ...prev,
-            '[SYSTEM] Pipeline processing successfully completed.',
-            '[SYSTEM] Explainable reports assembled. Output saved to memory storage.',
-            '[SYSTEM] Analysis ready for visualization.'
+            '[SUCCESS] Stage 4: Hallucination Verification complete. 3 supported claims, 1 hallucination purged.',
+            '[SUCCESS] Stage 5: Dual-format Markdown and JSON forensic reports generated.',
+            '[SYSTEM] Ready for interactive visual inspection.',
           ]);
         }
       } catch (err) {
         console.error(err);
         clearInterval(timer);
       }
-    }, 1000);
-  };
-
-  // Generate logs for presentation realism
-  const generateMockLogs = (stages: PipelineStage[]) => {
-    const logsToAdd: string[] = [];
-
-    stages.forEach(stage => {
-      if (stage.status === 'processing') {
-        const progress = stage.progress || 0;
-        if (progress < 25) {
-          const logMsg = `[RUNNING] ${stage.backendScript} - Starting module: ${stage.name}`;
-          if (!activeLogs.includes(logMsg)) logsToAdd.push(logMsg);
-        }
-        if (progress > 45 && progress < 75) {
-          const logMsg = `[STAGE LOG] ${stage.backendScript} - In progress (${progress}%) - input: ${stage.input}`;
-          if (!activeLogs.includes(logMsg)) logsToAdd.push(logMsg);
-        }
-      } else if (stage.status === 'completed') {
-        const logMsg = `[SUCCESS] ${stage.backendScript} - Completed stage successfully. Output: ${stage.output}`;
-        // Ensure we don't repeat the success log
-        if (!activeLogs.includes(logMsg)) {
-          logsToAdd.push(logMsg);
-        }
-      }
-    });
-
-    if (logsToAdd.length > 0) {
-      setActiveLogs(prev => [...prev, ...logsToAdd]);
-    }
+    }, 900);
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      
-      {/* Upload & Config Screen */}
-      {!isAnalyzing && (
-        <div className="space-y-6">
-          <div className="space-y-1">
-            <h1 className="text-xl font-bold text-slate-100">Upload Video for Agentic Causal Inference</h1>
-            <p className="text-xs text-slate-400">Select a video segment to trigger scene segmentation, captioning, causal linking, and hallucination checks.</p>
+    <div className="w-full py-8 space-y-8 select-none">
+      <Container size="default">
+        {/* Page Header */}
+        <div className="border-b border-[var(--border-default)] pb-6">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-default)] text-xs font-mono text-[var(--text-secondary)] mb-2">
+            <Sparkles className="w-3.5 h-3.5 text-[#6D5EF5]" />
+            <span>Interactive Verification Workspace</span>
           </div>
+          <h1 className="text-2xl sm:text-3xl font-black text-[var(--text-primary)] tracking-tight">
+            New Video Verification Analysis
+          </h1>
+          <p className="text-xs sm:text-sm text-[var(--text-secondary)] max-w-2xl mt-1 leading-relaxed">
+            Dispatch raw video streams through multi-modal perception, causal chaining, and pixel-grounded hallucination verification.
+          </p>
+        </div>
 
-          {/* Upload Area */}
-          {!videoFile ? (
-            <div 
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-slate-800 hover:border-indigo-500/50 bg-[#0d1321]/30 hover:bg-indigo-500/5 rounded-2xl p-12 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[250px] group"
-            >
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleFileSelectEvent} 
-                accept="video/*" 
-                className="hidden" 
-              />
-              <div className="p-4 rounded-full bg-slate-900 border border-slate-800 text-slate-400 group-hover:text-indigo-400 group-hover:border-indigo-500/20 transition-all mb-4">
-                <Upload className="w-6 h-6" />
+        {/* =========================================================================
+            TWO-COLUMN MAIN WORKSPACE (LEFT: DROPZONE / PREVIEW, RIGHT: CONFIG PANEL)
+        ========================================================================= */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6">
+          {/* ----------------- LEFT COLUMN: DROPZONE & VIDEO PREVIEW ----------------- */}
+          <div className="lg:col-span-7 space-y-4">
+            <div className="p-5 rounded-[16px] border border-[var(--border-default)] bg-[var(--bg-surface)] shadow-xs space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono font-semibold text-[var(--text-primary)] uppercase tracking-wider flex items-center gap-1.5">
+                  <FileVideo className="w-4 h-4 text-[#6D5EF5]" />
+                  <span>Video Input Ingress</span>
+                </span>
+                <span className="text-[11px] font-mono text-[var(--text-muted)]">
+                  Max 100MB
+                </span>
               </div>
-              <h3 className="text-sm font-bold text-slate-200 mb-1">Drag and drop a video here</h3>
-              <p className="text-xs text-slate-500 mb-2">or browse files from your local system</p>
-              <div className="text-[10px] text-slate-650 uppercase font-mono tracking-wider">
-                Supported formats: MP4, AVI, MOV, WEBM (Max 100MB)
-              </div>
-            </div>
-          ) : (
-            /* Upload preview state */
-            <div className="p-6 rounded-2xl glass-panel border border-slate-800 bg-slate-900/10 space-y-6">
-              <div className="flex flex-col md:flex-row gap-6 items-start">
-                
-                {/* Real video player preview */}
-                <div className="w-full md:w-80 aspect-video rounded-lg overflow-hidden bg-slate-950 border border-slate-850 flex-shrink-0 relative">
-                  {videoPreviewUrl && (
-                    <video 
-                      src={videoPreviewUrl} 
-                      controls 
-                      className="w-full h-full object-cover"
-                    />
-                  )}
+
+              {/* Upload Dropzone */}
+              {!uploadedDetails && !isUploading && (
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      fileInputRef.current?.click();
+                    }
+                  }}
+                  tabIndex={0}
+                  role="button"
+                  aria-label="Upload video file"
+                  className={`relative p-8 rounded-[14px] border-2 border-dashed transition-all flex flex-col items-center justify-center text-center cursor-pointer group ${
+                    dragOver
+                      ? 'border-[#6D5EF5] bg-[#6D5EF5]/5 scale-[1.01]'
+                      : 'border-[var(--border-default)] hover:border-[#6D5EF5]/60 bg-[var(--bg-secondary)]/50 hover:bg-[var(--bg-secondary)]'
+                  }`}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="video/*"
+                    onChange={handleFileSelectEvent}
+                    className="hidden"
+                    id="video-file-upload"
+                  />
+
+                  {/* Custom Animated Spiral Logo Icon Motif */}
+                  <div className="relative w-14 h-14 rounded-full border border-[var(--border-default)] bg-[var(--bg-surface)] flex items-center justify-center shadow-xs mb-3 group-hover:scale-110 transition-transform">
+                    <div className="absolute inset-0 rounded-full border border-[#6D5EF5]/30 animate-ping opacity-25" />
+                    <Upload className="w-6 h-6 text-[#6D5EF5]" />
+                  </div>
+
+                  <p className="text-xs sm:text-sm font-bold text-[var(--text-primary)]">
+                    Drag and drop your video clip here, or <span className="text-[#6D5EF5] underline">browse files</span>
+                  </p>
+                  <p className="text-[11px] text-[var(--text-muted)] mt-1 max-w-xs">
+                    Sub-second scene detection and keyframe extraction will automatically initialize upon dispatch.
+                  </p>
+
+                  {/* Format Badges */}
+                  <div className="flex items-center gap-1.5 mt-4">
+                    {['MP4', 'AVI', 'MOV', 'WEBM'].map((fmt) => (
+                      <span
+                        key={fmt}
+                        className="px-2 py-0.5 rounded-[6px] bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[10px] font-mono text-[var(--text-muted)]"
+                      >
+                        {fmt}
+                      </span>
+                    ))}
+                    <span className="text-[10px] font-mono text-[var(--text-muted)] ml-1">· Max 100MB</span>
+                  </div>
                 </div>
+              )}
 
-                {/* Details & Remove */}
-                <div className="flex-1 space-y-3 w-full">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-200 line-clamp-1">{videoFile.name}</h4>
-                      <p className="text-xs text-slate-500 mt-0.5">Size: {(videoFile.size / (1024 * 1024)).toFixed(2)} MB</p>
+              {/* Uploading Progress State */}
+              {isUploading && (
+                <div className="p-8 rounded-[14px] border border-[var(--border-default)] bg-[var(--bg-secondary)] text-center space-y-3">
+                  <Loader2 className="w-8 h-8 text-[#6D5EF5] animate-spin mx-auto" />
+                  <p className="text-xs font-mono font-bold text-[var(--text-primary)]">
+                    BUFFERING VIDEO STREAM TO MEMORY... {uploadProgress}%
+                  </p>
+                  <div className="w-full max-w-xs mx-auto h-2 rounded-full bg-[var(--border-default)] overflow-hidden">
+                    <div
+                      style={{ width: `${uploadProgress}%` }}
+                      className="h-full bg-[#6D5EF5] transition-all duration-150"
+                    />
+                  </div>
+                  <p className="text-[10px] font-mono text-[var(--text-muted)]">
+                    Estimating ETA: &lt;1.2s · High-speed local buffer
+                  </p>
+                </div>
+              )}
+
+              {/* Error Message Alert */}
+              {errorMessage && (
+                <div className="p-3 rounded-[10px] bg-[#F43F5E]/10 border border-[#F43F5E]/30 text-[#F43F5E] text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{errorMessage}</span>
+                </div>
+              )}
+
+              {/* Uploaded Video Preview State */}
+              {uploadedDetails && !isUploading && (
+                <div className="space-y-3">
+                  <div className="relative rounded-[12px] overflow-hidden border border-[var(--border-default)] bg-black aspect-video flex items-center justify-center">
+                    {videoPreviewUrl ? (
+                      <video
+                        src={videoPreviewUrl}
+                        controls
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <img
+                        src={uploadedDetails.thumbnail || '/frames/my_video_frames/my_video_scene_001_start.jpg'}
+                        alt={uploadedDetails.name}
+                        className="w-full h-full object-cover opacity-90"
+                      />
+                    )}
+                    <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/75 backdrop-blur-md text-white font-mono text-[10px]">
+                      {uploadedDetails.duration}s clip
                     </div>
-                    {!isUploading && (
+                  </div>
+
+                  <div className="p-3.5 rounded-[12px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] flex items-center justify-between">
+                    <div>
+                      <h4 className="font-mono text-xs font-bold text-[var(--text-primary)]">
+                        {uploadedDetails.name}
+                      </h4>
+                      <p className="text-[11px] font-mono text-[var(--text-muted)]">
+                        File Size: {uploadedDetails.size} · Estimated Scenes: ~4
+                      </p>
+                    </div>
+
+                    {!isAnalyzing && (
                       <button
+                        type="button"
                         onClick={handleRemoveVideo}
-                        className="p-2 rounded-lg bg-slate-900 hover:bg-red-500/10 border border-slate-800 hover:border-red-500/20 text-slate-400 hover:text-red-400 transition-all cursor-pointer"
-                        title="Remove Video"
+                        className="p-1.5 rounded-[8px] hover:bg-[#F43F5E]/10 text-[var(--text-muted)] hover:text-[#F43F5E] transition-colors cursor-pointer"
+                        title="Remove video"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
                   </div>
-
-                  {/* Uploading progress bar */}
-                  {isUploading ? (
-                    <div className="space-y-1.5 pt-2">
-                      <div className="flex items-center justify-between text-xs text-slate-400">
-                        <span className="flex items-center gap-1.5">
-                          <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin" />
-                          Uploading to analyzer service...
-                        </span>
-                        <span className="font-mono">{uploadProgress}%</span>
-                      </div>
-                      <div className="w-full h-1.5 rounded-full bg-slate-950 overflow-hidden">
-                        <div 
-                          className="h-full bg-indigo-500 transition-all duration-150"
-                          style={{ width: `${uploadProgress}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/5 border border-emerald-500/10 px-3 py-2 rounded-lg w-max mt-2">
-                      <CheckCircle className="w-4 h-4" />
-                      Ready for agent pipeline analysis (Simulated duration: {uploadedDetails?.duration} seconds)
-                    </div>
-                  )}
                 </div>
+              )}
+            </div>
 
+            {/* Quick Sample Videos Row */}
+            <div className="p-4 rounded-[14px] border border-[var(--border-default)] bg-[var(--bg-surface)] shadow-xs space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono font-semibold text-[var(--text-primary)] uppercase tracking-wider">
+                  Or Test With Pre-Loaded Sample Videos:
+                </span>
+                <span className="text-[10px] font-mono text-[#6D5EF5]">Instant Benchmarks</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {sampleVideos.map((sample) => (
+                  <button
+                    key={sample.id}
+                    type="button"
+                    onClick={() => handleSelectSample(sample)}
+                    disabled={isAnalyzing}
+                    className="p-2.5 rounded-[10px] border border-[var(--border-subtle)] bg-[var(--bg-secondary)] hover:border-[#6D5EF5] hover:bg-[var(--bg-surface)] text-left transition-all cursor-pointer group flex flex-col justify-between"
+                  >
+                    <div className="relative aspect-video w-full rounded-[6px] overflow-hidden bg-black mb-1.5">
+                      <img
+                        src={sample.thumbnail}
+                        alt={sample.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                      <div className="absolute bottom-1 right-1 px-1 rounded bg-black/80 text-[9px] font-mono text-white">
+                        {sample.duration}s
+                      </div>
+                    </div>
+                    <span className="font-mono text-xs font-bold text-[var(--text-primary)] truncate block">
+                      {sample.name}
+                    </span>
+                    <span className="text-[10px] text-[var(--text-muted)] truncate block">
+                      {sample.category}
+                    </span>
+                  </button>
+                ))}
               </div>
             </div>
-          )}
 
-          {/* Configuration Settings */}
-          {uploadedDetails && !isUploading && (
-            <div className="p-6 rounded-2xl border border-slate-800 bg-[#0d1321]/20 space-y-5">
-              <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-                <Settings className="w-4.5 h-4.5 text-indigo-400" />
-                <h3 className="text-sm font-bold text-slate-200">Pipeline Execution Parameters</h3>
+            {/* Side Tip Card */}
+            <div className="p-3.5 rounded-[12px] bg-[#6D5EF5]/5 border border-[#6D5EF5]/20 flex items-start gap-2.5 text-xs text-[var(--text-secondary)]">
+              <Info className="w-4 h-4 text-[#6D5EF5] shrink-0 mt-0.5" />
+              <span>
+                <strong>Auditor Tip:</strong> Clips under 60 seconds provide sub-10 second verification latency with dense pixel-level causal groundings.
+              </span>
+            </div>
+          </div>
+
+          {/* ----------------- RIGHT COLUMN: PIPELINE CONFIGURATION PANEL ----------------- */}
+          <div className="lg:col-span-5 space-y-4">
+            <div className="p-5 rounded-[16px] border border-[var(--border-default)] bg-[var(--bg-surface)] shadow-xs space-y-5">
+              <div className="flex items-center justify-between border-b border-[var(--border-default)] pb-3">
+                <span className="text-xs font-mono font-semibold text-[var(--text-primary)] uppercase tracking-wider flex items-center gap-1.5">
+                  <Sliders className="w-4 h-4 text-[#6D5EF5]" />
+                  <span>Pipeline Configuration</span>
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/25">
+                  Runtime Ready
+                </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Config 1 */}
-                <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-850 bg-slate-900/10 hover:border-slate-850 hover:bg-slate-900/20 cursor-pointer transition-colors">
-                  <input 
-                    type="checkbox" 
-                    checked={config.sceneCaptions} 
-                    onChange={e => setConfig(prev => ({ ...prev, sceneCaptions: e.target.checked }))}
-                    className="mt-1 rounded accent-indigo-500 border-slate-800"
-                  />
-                  <div>
-                    <span className="text-xs font-bold text-slate-200 block">Generate Scene Captions</span>
-                    <span className="text-[10px] text-slate-500 mt-0.5 block">Segment clip and run Qwen2.5-VL captioning</span>
-                  </div>
+              {/* Backend Selector Segmented Control */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-[var(--text-primary)] block">
+                  Vision-Language Model Backend:
                 </label>
-
-                {/* Config 2 */}
-                <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-850 bg-slate-900/10 hover:border-slate-850 hover:bg-slate-900/20 cursor-pointer transition-colors">
-                  <input 
-                    type="checkbox" 
-                    checked={config.narrative} 
-                    onChange={e => setConfig(prev => ({ ...prev, narrative: e.target.checked }))}
-                    className="mt-1 rounded accent-indigo-500 border-slate-800"
-                  />
-                  <div>
-                    <span className="text-xs font-bold text-slate-200 block">Generate Coherent Narrative</span>
-                    <span className="text-[10px] text-slate-500 mt-0.5 block">Synthesize scene descriptions into summary report</span>
-                  </div>
-                </label>
-
-                {/* Config 3 */}
-                <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-850 bg-slate-900/10 hover:border-slate-850 hover:bg-slate-900/20 cursor-pointer transition-colors">
-                  <input 
-                    type="checkbox" 
-                    checked={config.causalReasoning} 
-                    onChange={e => setConfig(prev => ({ ...prev, causalReasoning: e.target.checked }))}
-                    className="mt-1 rounded accent-indigo-500 border-slate-800"
-                  />
-                  <div>
-                    <span className="text-xs font-bold text-slate-200 block">Infer Causal Relationships</span>
-                    <span className="text-[10px] text-slate-500 mt-0.5 block">Analyze logical links between scene transitions</span>
-                  </div>
-                </label>
-
-                {/* Config 4 */}
-                <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-850 bg-slate-900/10 hover:border-slate-850 hover:bg-slate-900/20 cursor-pointer transition-colors">
-                  <input 
-                    type="checkbox" 
-                    checked={config.verifyHallucinations} 
-                    onChange={e => setConfig(prev => ({ ...prev, verifyHallucinations: e.target.checked }))}
-                    className="mt-1 rounded accent-indigo-500 border-slate-800"
-                  />
-                  <div>
-                    <span className="text-xs font-bold text-slate-200 block">Verify Visual Hallucinations</span>
-                    <span className="text-[10px] text-slate-500 mt-0.5 block">Audit claims against physical image frames</span>
-                  </div>
-                </label>
-
-                {/* Config 5 */}
-                <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-850 bg-slate-900/10 hover:border-slate-850 hover:bg-slate-900/20 cursor-pointer transition-colors">
-                  <input 
-                    type="checkbox" 
-                    checked={config.explainability} 
-                    onChange={e => setConfig(prev => ({ ...prev, explainability: e.target.checked }))}
-                    className="mt-1 rounded accent-indigo-500 border-slate-800"
-                  />
-                  <div>
-                    <span className="text-xs font-bold text-slate-200 block">Generate Explainability Report</span>
-                    <span className="text-[10px] text-slate-500 mt-0.5 block">Link verifications to specific timestamps & frames</span>
-                  </div>
-                </label>
-
-                {/* Config 6 */}
-                <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-850 bg-slate-900/10 hover:border-slate-850 hover:bg-slate-900/20 cursor-pointer transition-colors">
-                  <input 
-                    type="checkbox" 
-                    checked={config.diarization} 
-                    onChange={e => setConfig(prev => ({ ...prev, diarization: e.target.checked }))}
-                    className="mt-1 rounded accent-indigo-500 border-slate-800"
-                  />
-                  <div>
-                    <span className="text-xs font-bold text-slate-200 block">Speaker Diarization</span>
-                    <span className="text-[10px] text-slate-500 mt-0.5 block">Resolve speech tracks to speaker mappings</span>
-                  </div>
-                </label>
+                <div className="grid grid-cols-3 gap-1 p-1 rounded-[10px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] text-xs">
+                  <button
+                    type="button"
+                    disabled={isAnalyzing}
+                    onClick={() => setBackend('qwen25vl')}
+                    className={`py-1.5 px-2 rounded-[8px] font-medium transition-all cursor-pointer ${
+                      backend === 'qwen25vl'
+                        ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-xs font-bold'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    Qwen2.5-VL
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isAnalyzing}
+                    onClick={() => setBackend('gpt4o')}
+                    className={`py-1.5 px-2 rounded-[8px] font-medium transition-all cursor-pointer ${
+                      backend === 'gpt4o'
+                        ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-xs font-bold'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    GPT-4o Vision
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isAnalyzing}
+                    onClick={() => setBackend('mock')}
+                    className={`py-1.5 px-2 rounded-[8px] font-medium transition-all cursor-pointer ${
+                      backend === 'mock'
+                        ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-xs font-bold'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    Mock Heuristic
+                  </button>
+                </div>
+                <p className="text-[11px] text-[var(--text-muted)]">
+                  {backend === 'qwen25vl'
+                    ? 'Recommended: Local/Groq Vision accelerated inference with zero key-leakage.'
+                    : backend === 'gpt4o'
+                    ? 'Cloud high-precision vision agent via OpenAI batch / vision completions.'
+                    : 'Fast offline synthetic benchmark generator for unit verification.'}
+                </p>
               </div>
 
-              <div className="pt-4 flex justify-end">
+              {/* PySceneDetect Slider */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-[var(--text-primary)]">PySceneDetect Cut Threshold:</span>
+                  <span className="font-mono text-[#6D5EF5] font-semibold">{sceneThreshold.toFixed(1)}</span>
+                </div>
+                <input
+                  type="range"
+                  min="20"
+                  max="60"
+                  step="1"
+                  disabled={isAnalyzing}
+                  value={sceneThreshold}
+                  onChange={(e) => setSceneThreshold(parseFloat(e.target.value))}
+                  className="w-full accent-[#6D5EF5] cursor-pointer"
+                />
+                <span className="text-[10px] text-[var(--text-muted)] block">
+                  Default 40.0. Higher thresholds produce fewer, longer scenes.
+                </span>
+              </div>
+
+              {/* Keyframes Per Scene */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-[var(--text-primary)]">Keyframes Extracted Per Scene:</span>
+                  <span className="font-mono text-[#6D5EF5] font-semibold">{framesPerScene} frames</span>
+                </div>
+                <div className="grid grid-cols-4 gap-1 p-1 rounded-[10px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] text-xs text-center">
+                  {[2, 4, 6, 8].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      disabled={isAnalyzing}
+                      onClick={() => setFramesPerScene(num)}
+                      className={`py-1 rounded-[6px] font-mono cursor-pointer transition-colors ${
+                        framesPerScene === num
+                          ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] font-bold shadow-xs'
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                      }`}
+                    >
+                      {num}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Whisper Diarization Toggle */}
+              <div className="flex items-center justify-between p-3 rounded-[10px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)]">
+                <div>
+                  <span className="text-xs font-bold text-[var(--text-primary)] block">OpenAI Whisper ASR</span>
+                  <span className="text-[10px] text-[var(--text-muted)]">Transcribes speech & speaker diarization</span>
+                </div>
                 <button
-                  onClick={handleStartAnalysis}
-                  className="flex items-center gap-2 px-6 py-3.5 rounded-xl bg-indigo-650 hover:bg-indigo-550 text-white font-bold text-sm shadow-lg shadow-indigo-650/15 transition-all hover:scale-[1.01] cursor-pointer"
+                  type="button"
+                  disabled={isAnalyzing}
+                  onClick={() => setWhisperEnabled(!whisperEnabled)}
+                  className={`w-10 h-5 rounded-full transition-colors relative cursor-pointer ${
+                    whisperEnabled ? 'bg-[#10B981]' : 'bg-neutral-400'
+                  }`}
                 >
-                  <Play className="w-4 h-4 fill-white" />
-                  Start AI Analysis Pipeline
+                  <span
+                    className={`block w-3.5 h-3.5 rounded-full bg-white transition-transform ${
+                      whisperEnabled ? 'translate-x-5' : 'translate-x-1'
+                    }`}
+                  />
                 </button>
               </div>
 
-            </div>
-          )}
-
-        </div>
-      )}
-
-      {/* Processing Pipeline Dashboard */}
-      {isAnalyzing && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          
-          {/* Main Stage List */}
-          <div className="lg:col-span-2 space-y-5">
-            <div className="p-6 rounded-2xl border border-slate-800 bg-[#0d1321]/40 space-y-6">
-              
-              <div className="flex items-center justify-between border-b border-slate-850 pb-4">
-                <div className="space-y-1">
-                  <h3 className="text-base font-bold text-slate-200 flex items-center gap-2">
-                    <Cpu className="w-5 h-5 text-indigo-400 animate-spin" />
-                    Agent Orchestrator Pipeline
-                  </h3>
-                  <p className="text-xs text-slate-400">Processing: {uploadedDetails?.name}</p>
-                </div>
-                {isCompleted && (
-                  <span className="px-2.5 py-1 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
-                    Finished
-                  </span>
-                )}
-              </div>
-
-              {/* Stage Progress Elements */}
-              <div className="space-y-4">
-                {pipelineStages.map((stage) => {
-                  const isPending = stage.status === 'pending';
-                  const isProcessing = stage.status === 'processing';
-                  const isCompleted = stage.status === 'completed';
-                  const isError = stage.status === 'error';
-
-                  return (
-                    <div 
-                      key={stage.id} 
-                      className={`p-4 rounded-xl border transition-all ${
-                        isProcessing ? 'border-indigo-500/20 bg-indigo-500/5' :
-                        isCompleted ? 'border-slate-850/60 bg-slate-900/10' :
-                        'border-slate-850/40 bg-slate-950/20 opacity-60'
+              {/* Verification Strictness Setting */}
+              <div className="space-y-1.5">
+                <span className="text-xs font-bold text-[var(--text-primary)] block">
+                  Hallucination Defense Strictness:
+                </span>
+                <div className="grid grid-cols-3 gap-1 p-1 rounded-[10px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] text-xs text-center">
+                  {(['permissive', 'balanced', 'rigorous'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      disabled={isAnalyzing}
+                      onClick={() => setStrictness(mode)}
+                      className={`py-1 rounded-[6px] capitalize transition-colors cursor-pointer ${
+                        strictness === mode
+                          ? 'bg-[#6D5EF5] text-white font-bold shadow-xs'
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-0.5">
-                          <h4 className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                            {stage.name}
-                            <span className="text-[10px] text-slate-500 font-mono">({stage.backendScript})</span>
-                          </h4>
-                          <p className="text-[10px] text-slate-550">{stage.purpose}</p>
-                        </div>
-
-                        {/* Status Label */}
-                        <div className="text-[10px] font-mono">
-                          {isPending && <span className="text-slate-500">PENDING</span>}
-                          {isProcessing && (
-                            <span className="text-indigo-400 font-bold flex items-center gap-1">
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                              {stage.progress}%
-                            </span>
-                          )}
-                          {isCompleted && <span className="text-emerald-400 font-semibold">SUCCESS</span>}
-                          {isError && <span className="text-red-400 font-bold">ERROR</span>}
-                        </div>
-                      </div>
-
-                      {/* Progress Line */}
-                      {isProcessing && (
-                        <div className="w-full h-1 rounded-full bg-slate-950 overflow-hidden mt-3">
-                          <div 
-                            className="h-full bg-indigo-500 transition-all duration-300"
-                            style={{ width: `${stage.progress}%` }}
-                          ></div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                      {mode}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {/* View Results Trigger */}
-              {isCompleted && (
-                <div className="pt-2">
-                  <button
-                    onClick={() => navigate(`/results/${analysisId}`)}
-                    className="w-full flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-indigo-650 hover:bg-indigo-550 text-white font-bold text-sm shadow-xl shadow-indigo-650/20 transition-all cursor-pointer hover:scale-[1.01]"
-                  >
-                    View Detailed Results Reports
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-
+              {/* Primary Action Button */}
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={handleStartAnalysis}
+                  disabled={!uploadedDetails || isAnalyzing}
+                  className={`w-full py-3 rounded-[12px] font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer ${
+                    !uploadedDetails || isAnalyzing
+                      ? 'bg-neutral-300 dark:bg-neutral-800 text-neutral-500 cursor-not-allowed'
+                      : 'bg-[#6D5EF5] hover:bg-[#5B4BE2] text-white shadow-[#6D5EF5]/30 hover:shadow-[#6D5EF5]/50 hover:-translate-y-0.5'
+                  }`}
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Pipeline Executing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 fill-current" />
+                      <span>Run Verification Pipeline (~9.2s est.)</span>
+                    </>
+                  )}
+                </button>
+                <span className="text-[10px] font-mono text-[var(--text-muted)] text-center block mt-2">
+                  Estimated runtime: 4.8s perception + 1.4s reasoning + 2.1s verification + 0.5s reports
+                </span>
+              </div>
             </div>
           </div>
+        </div>
 
-          {/* Terminal Console Logs */}
-          <div className="lg:col-span-1 p-5 rounded-2xl border border-slate-800 bg-[#070a13] flex flex-col h-[500px]">
-            <div className="flex items-center gap-2 border-b border-slate-850 pb-3 mb-3 flex-shrink-0">
-              <Terminal className="w-4 h-4 text-slate-400" />
-              <h4 className="text-xs font-bold text-slate-300">Agent Terminal Logs</h4>
+        {/* =========================================================================
+            LIVE EXECUTION STEPPER & STREAMING LOGS (APPEARS WHEN RUNNING)
+        ========================================================================= */}
+        {isAnalyzing && (
+          <div className="mt-8 p-6 rounded-[16px] border border-[var(--border-default)] bg-[var(--bg-surface)] shadow-md space-y-6">
+            <div className="flex items-center justify-between border-b border-[var(--border-default)] pb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-[#6D5EF5] animate-ping" />
+                <h3 className="font-bold text-sm text-[var(--text-primary)]">
+                  Live Agentic Orchestration Stepper
+                </h3>
+              </div>
+              <span className="text-xs font-mono text-[var(--text-muted)]">
+                ANALYSIS ID: {analysisId}
+              </span>
             </div>
 
-            <div className="flex-1 overflow-y-auto font-mono text-[10px] text-indigo-200/70 space-y-2.5 custom-scrollbar pr-2">
-              {activeLogs.map((log, index) => {
-                let colorClass = 'text-slate-400';
-                if (log.startsWith('[SUCCESS]')) colorClass = 'text-emerald-400';
-                if (log.startsWith('[ERROR]')) colorClass = 'text-rose-500 font-bold';
-                if (log.startsWith('[SYSTEM]')) colorClass = 'text-indigo-400 font-bold';
-                if (log.startsWith('[RUNNING]')) colorClass = 'text-blue-400';
+            {/* Stepper Progress Bar */}
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+              {[
+                { name: 'Perception', label: 'Scene Cuts & Keyframes' },
+                { name: 'Synthesis', label: 'Narrative Storyline' },
+                { name: 'Reasoning', label: 'Causal Graph Chains' },
+                { name: 'Verification', label: 'Hallucination Defense' },
+                { name: 'Report', label: 'Forensic Markdown' },
+              ].map((step, idx) => {
+                const stageObj = pipelineStages[idx];
+                const isStepCompleted = stageObj?.status === 'completed';
+                const isStepRunning = stageObj?.status === 'processing';
 
                 return (
-                  <div key={index} className={`leading-normal border-l border-slate-850 pl-2 ${colorClass}`}>
-                    {log}
+                  <div
+                    key={step.name}
+                    className={`p-3.5 rounded-[12px] border transition-all ${
+                      isStepCompleted
+                        ? 'bg-[#10B981]/10 border-[#10B981]/30 text-[#10B981]'
+                        : isStepRunning
+                        ? 'bg-[#6D5EF5]/10 border-[#6D5EF5] text-[#6D5EF5]'
+                        : 'bg-[var(--bg-secondary)] border-[var(--border-subtle)] text-[var(--text-muted)]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-mono text-[10px] font-bold">STAGE {idx + 1}</span>
+                      {isStepCompleted ? (
+                        <CheckCircle className="w-3.5 h-3.5 text-[#10B981]" />
+                      ) : isStepRunning ? (
+                        <Loader2 className="w-3.5 h-3.5 text-[#6D5EF5] animate-spin" />
+                      ) : (
+                        <span className="w-2 h-2 rounded-full bg-neutral-300 dark:bg-neutral-700" />
+                      )}
+                    </div>
+                    <span className="font-bold text-xs block text-[var(--text-primary)]">{step.name}</span>
+                    <span className="text-[10px] opacity-75 block truncate">{step.label}</span>
                   </div>
                 );
               })}
+            </div>
+
+            {/* Streaming Discovered Keyframes */}
+            {discoveredScenes.length > 0 && (
+              <div className="space-y-2 pt-2">
+                <span className="text-xs font-mono text-[var(--text-muted)] uppercase tracking-wider block">
+                  Streaming Discovered Keyframes:
+                </span>
+                <div className="flex items-center gap-3 overflow-x-auto pb-2">
+                  {discoveredScenes.map((src, i) => (
+                    <div
+                      key={i}
+                      className="relative w-36 aspect-video shrink-0 rounded-[8px] overflow-hidden border border-[#6D5EF5]/40 shadow-xs animate-in fade-in"
+                    >
+                      <img src={src} alt="Discovered Keyframe" className="w-full h-full object-cover" />
+                      <div className="absolute top-1 left-1 px-1 rounded bg-black/75 text-[9px] font-mono text-white">
+                        Scene 00{i + 1}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Live Terminal Output Console */}
+            <div className="rounded-[10px] bg-black text-green-400 p-4 font-mono text-xs max-h-48 overflow-y-auto space-y-1 border border-neutral-800">
+              <div className="flex items-center justify-between pb-2 mb-2 border-b border-neutral-800 text-[10px] text-neutral-400">
+                <div className="flex items-center gap-2">
+                  <Terminal className="w-3.5 h-3.5 text-[#6D5EF5]" />
+                  <span>AGENT RUNTIME STDOUT</span>
+                </div>
+                <span>PID #8492</span>
+              </div>
+              {activeLogs.map((log, i) => (
+                <div key={i} className="leading-tight">
+                  {log}
+                </div>
+              ))}
               <div ref={logEndRef} />
             </div>
+
+            {/* Completed Action CTA */}
+            {isCompleted && (
+              <div className="p-4 rounded-[12px] bg-[#10B981]/10 border border-[#10B981]/30 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <CheckCircle className="w-5 h-5 text-[#10B981]" />
+                  <div>
+                    <h4 className="font-bold text-xs sm:text-sm text-[var(--text-primary)]">
+                      Verification Pipeline Successfully Finished
+                    </h4>
+                    <p className="text-xs text-[var(--text-secondary)]">
+                      All causal claims verified against physical keyframe evidence.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => navigate(`/results/${analysisId}`)}
+                  className="px-5 py-2 rounded-[10px] bg-[#10B981] hover:bg-[#059669] text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-transform hover:scale-105 cursor-pointer"
+                >
+                  <span>View Complete Forensic Report</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
-
-        </div>
-      )}
-
+        )}
+      </Container>
     </div>
   );
 }

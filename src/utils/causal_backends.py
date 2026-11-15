@@ -162,9 +162,15 @@ def llm_causal_backend(scenes, **kwargs):
         raise e
 
 
+def _get_veritas_local():
+    from src.utils.local_model_loader import veritas_local_causal
+    return veritas_local_causal
+
 BACKENDS = {
     "mock": mock_causal_backend,
     "llm": llm_causal_backend,
+    "groq": llm_causal_backend,
+    "veritas_local": lambda *args, **kwargs: _get_veritas_local()(*args, **kwargs),
 }
 
 

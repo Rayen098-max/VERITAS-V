@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, ShieldCheck, Film, Info } from 'lucide-react';
+import { X, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Film } from 'lucide-react';
 import { VerdictBadge } from './Badge';
 import type { VerificationVerdict } from '../types';
 
@@ -104,82 +104,49 @@ export const FrameInspectorModal: React.FC<FrameInspectorModalProps> = ({
           {/* Left: Frame Display Canvas */}
           <div className="lg:col-span-7 p-4 bg-slate-950 flex flex-col items-center justify-center select-none">
             <div className="relative w-full aspect-video rounded border border-slate-800 bg-slate-900 overflow-hidden flex items-center justify-center">
-              {/* Synthetic Visual Representation of the Video Frame */}
+              {/* Real Video Frame Display with Fallback */}
               <div
-                className="w-full h-full relative transition-transform duration-200 flex items-center justify-center bg-gradient-to-b from-slate-900 via-slate-950 to-slate-900"
+                className="w-full h-full relative transition-transform duration-200 flex items-center justify-center bg-black"
                 style={{ transform: `scale(${zoomLevel})` }}
               >
-                {/* Visual Simulation of Scene Content */}
-                <div className="absolute inset-0 flex flex-col justify-between p-6">
-                  {/* Scene Header Watermark */}
-                  <div className="flex justify-between items-start">
-                    <div className="font-mono text-[11px] text-slate-500 bg-black/60 px-2 py-1 rounded border border-slate-800">
-                      RAW_KEYFRAME: {currentFrame} | PTS: {(currentIndex * 1.8 + 7.8).toFixed(2)}s
-                    </div>
-                    <div className="font-mono text-[11px] text-emerald-400 bg-emerald-950/80 px-2 py-1 rounded border border-emerald-800">
-                      FFMPEG_EXTRACT: CRC32_OK
-                    </div>
-                  </div>
+                <img
+                  src={currentFrame.startsWith('/') ? currentFrame : `/${currentFrame}`}
+                  alt={`Keyframe ${currentFrame}`}
+                  onError={(e) => {
+                    // Fallback to stylized inspection canvas if file not on disk
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                  className="w-full h-full object-contain"
+                />
 
-                  {/* Synthetic Visual Target / Object Detection Bounding Box */}
-                  <div className="self-center my-auto flex flex-col items-center">
-                    {isBrokenGlassFrame ? (
-                      <div className="relative p-6 border-2 border-dashed border-emerald-400/80 rounded bg-emerald-950/20 backdrop-blur-xs flex flex-col items-center">
-                        <span className="absolute -top-3 left-2 px-1.5 py-0.5 bg-emerald-900 border border-emerald-600 text-emerald-200 font-mono text-[10px] font-bold">
-                          DETECTION: GLASS_SHATTER_FRAGMENTS (conf: 0.94)
-                        </span>
-                        <div className="w-24 h-16 border-b-4 border-emerald-400 flex items-end justify-center gap-1 py-1">
-                          <span className="w-2 h-4 bg-emerald-300/80 transform rotate-12"></span>
-                          <span className="w-3 h-2 bg-emerald-400/90 transform -rotate-45"></span>
-                          <span className="w-1.5 h-3 bg-emerald-200/70 transform rotate-6"></span>
-                          <span className="w-4 h-2 bg-emerald-400 transform rotate-45"></span>
-                        </div>
-                        <span className="text-[11px] font-mono text-emerald-300 mt-2">
-                          IMPACT POINT (Z-AXIS 0.0m TILE FLOOR)
+                {/* Coordinate Grid Overlay */}
+                {showGrid && (
+                  <div className="absolute inset-0 pointer-events-none grid grid-cols-4 grid-rows-3 border border-cyan-500/20">
+                    {Array.from({ length: 12 }).map((_, i) => (
+                      <div key={i} className="border border-cyan-500/10 flex items-start justify-start p-1">
+                        <span className="text-[9px] font-mono text-cyan-500/40">
+                          {String.fromCharCode(65 + Math.floor(i / 4))}{(i % 4) + 1}
                         </span>
                       </div>
-                    ) : isFallingFrame ? (
-                      <div className="relative p-6 border-2 border-cyan-400/80 rounded bg-cyan-950/20 flex flex-col items-center">
-                        <span className="absolute -top-3 left-2 px-1.5 py-0.5 bg-cyan-900 border border-cyan-600 text-cyan-200 font-mono text-[10px] font-bold">
-                          DETECTION: REAGENT_BEAKER_TRAJECTORY (conf: 0.96)
-                        </span>
-                        <div className="w-16 h-20 border-2 border-cyan-300/80 rounded-sm flex items-center justify-center bg-cyan-500/10">
-                          <span className="text-[10px] font-mono text-cyan-200">250ml PYREX</span>
-                        </div>
-                        <span className="text-[10px] font-mono text-cyan-300 mt-1">
-                          VELOCITY: -2.4 m/s (DOWNWARD FREEFALL)
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="relative p-6 border border-slate-700 rounded bg-slate-900/50 flex flex-col items-center">
-                        <span className="font-mono text-xs text-slate-300">
-                          STATIONARY WORKSTATION GEOMETRY
-                        </span>
-                        <span className="text-[11px] font-mono text-slate-500">
-                          Optical feature track stable
-                        </span>
-                      </div>
-                    )}
+                    ))}
                   </div>
+                )}
 
-                  {/* Frame Footer Overlay */}
-                  <div className="flex justify-between items-end font-mono text-[10px] text-slate-400 bg-black/60 px-2 py-1 rounded">
-                    <span>EXPOSURE: 1/250s | ISO 400</span>
-                    <span>VERITAS VERIFICATION SUITE</span>
-                  </div>
+                {/* Watermark Overlay */}
+                <div className="absolute top-2 left-2 flex items-center gap-2 pointer-events-none">
+                  <span className="font-mono text-[10px] text-slate-300 bg-black/75 px-2 py-0.5 rounded border border-slate-700/60 backdrop-blur-md">
+                    FRAME: {currentFrame.split('/').pop()}
+                  </span>
+                  <span className="font-mono text-[10px] text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-700/60 backdrop-blur-md">
+                    VERITAS-V AUDIT
+                  </span>
                 </div>
 
-                {/* Optional Grid Overlay */}
-                {showGrid && (
-                  <div
-                    className="absolute inset-0 pointer-events-none opacity-25"
-                    style={{
-                      backgroundImage:
-                        'linear-gradient(to right, #6366f1 1px, transparent 1px), linear-gradient(to bottom, #6366f1 1px, transparent 1px)',
-                      backgroundSize: '40px 40px',
-                    }}
-                  />
-                )}
+                {/* Frame Footer Overlay */}
+                <div className="absolute bottom-2 inset-x-2 flex justify-between items-end font-mono text-[10px] text-slate-400 bg-black/70 px-3 py-1 rounded backdrop-blur-md pointer-events-none">
+                  <span>EXPOSURE: 1/250s | PTS: {(currentIndex * 1.8 + 7.8).toFixed(2)}s</span>
+                  <span className="text-cyan-400 font-bold">VERITAS FORENSIC SUITE</span>
+                </div>
               </div>
             </div>
 

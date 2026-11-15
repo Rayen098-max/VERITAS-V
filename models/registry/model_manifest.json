@@ -1,0 +1,22 @@
+{
+  "veritas_model_registry_version": "2.0",
+  "timestamp": "2026-11-14T23:45:00Z",
+  "models": [
+    {
+      "model_id": "veritas-captioner-v1.0",
+      "path": "C:\\Users\\win 10\\Desktop\\VERITAS-V\\VERITAS-V\\models\\fused\\veritas-captioner-fused",
+      "base_backbone": "Qwen/Qwen2.5-VL-3B-Instruct",
+      "parameters": "3.0B",
+      "format": "safetensors",
+      "sha256": "de64dbacb573051ed29e0fbb10a1a93edae0dd9e294e1fc7c046229198d1cc8e"
+    },
+    {
+      "model_id": "veritas-causalverifier-v1.0",
+      "path": "C:\\Users\\win 10\\Desktop\\VERITAS-V\\VERITAS-V\\models\\fused\\veritas-causalverifier-fused",
+      "base_backbone": "meta-llama/Llama-3.1-8B-Instruct",
+      "parameters": "8.0B",
+      "format": "safetensors",
+      "sha256": "afe29f271bc2ab9d6da50f818aa05e53e1bb785461e2b8bb4ab95a3d194f8717"
+    }
+  ]
+}

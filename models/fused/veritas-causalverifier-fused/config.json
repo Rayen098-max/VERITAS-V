@@ -1,0 +1,17 @@
+{
+  "model_type": "llama",
+  "architectures": [
+    "LlamaForCausalLM"
+  ],
+  "base_model": "meta-llama/Llama-3.1-8B-Instruct",
+  "fusion_type": "peft_merge_and_unload",
+  "alignment": "DPO_aligned",
+  "context_length": 16384,
+  "quantization_formats_available": [
+    "16bit-bf16",
+    "awq-4bit",
+    "gguf-q4_k_m",
+    "gguf-q8_0"
+  ],
+  "status": "ready"
+}

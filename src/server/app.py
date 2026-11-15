@@ -1,0 +1,369 @@
+import os
+import sys
+import json
+import glob
+import time
+import shutil
+import logging
+import threading
+import subprocess
+from pathlib import Path
+from typing import Dict, Any, List, Optional
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from src.server.parser import build_video_analysis
+from src.pipeline.stage1_captioning import run_captioning_stage
+from src.pipeline.stage2_narrative import generate_narrative
+from src.pipeline.stage3_causal import generate_causal_narrative
+from src.pipeline.stage4_verification import generate_verification_report
+from src.pipeline.stage5_explainability import generate_explainability_report
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+app = FastAPI(title="VERITAS-V Backend API", version="1.0.0")
+
+# CORS setup for Vite frontend (typically http://localhost:5173)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Ensure directories exist
+for d in ["media", "frames", "output", "tmp", "logs", "public/frames"]:
+    os.makedirs(d, exist_ok=True)
+
+# Mount static asset directories
+app.mount("/frames", StaticFiles(directory="frames"), name="frames")
+app.mount("/media", StaticFiles(directory="media"), name="media")
+app.mount("/output", StaticFiles(directory="output"), name="output")
+
+# In-memory tracking for active pipeline jobs
+# Key: analysis_id -> Job metadata
+ACTIVE_JOBS: Dict[str, Dict[str, Any]] = {}
+
+DEFAULT_STAGES = [
+    {
+        "id": "captioning",
+        "name": "Scene Detection & Keyframe Extraction",
+        "status": "pending",
+        "purpose": "Detect cuts with PySceneDetect, sample keyframes, transcribe audio via Whisper, and generate grounded captions.",
+        "backendScript": "src/pipeline/stage1_captioning.py",
+        "input": "Raw Video (.mp4)",
+        "output": "_captions.json",
+        "progress": 0,
+    },
+    {
+        "id": "narrative",
+        "name": "Chronological Narrative Synthesis",
+        "status": "pending",
+        "purpose": "Merge per-scene captions and transcripts into a continuous video narrative.",
+        "backendScript": "src/pipeline/stage2_narrative.py",
+        "input": "_captions.json",
+        "output": "_narrative.txt",
+        "progress": 0,
+    },
+    {
+        "id": "causal",
+        "name": "Causal Link Inference",
+        "status": "pending",
+        "purpose": "Infer cause-and-effect relationships between consecutive scenes using LLM structured reasoning.",
+        "backendScript": "src/pipeline/stage3_causal.py",
+        "input": "_captions.json",
+        "output": "_causal.json",
+        "progress": 0,
+    },
+    {
+        "id": "verification",
+        "name": "Hallucination Verification",
+        "status": "pending",
+        "purpose": "Check each causal claim against visual frame keyframes to detect and flag hallucinations.",
+        "backendScript": "src/pipeline/stage4_verification.py",
+        "input": "_causal.json + _captions.json",
+        "output": "_verification.json",
+        "progress": 0,
+    },
+    {
+        "id": "explainability",
+        "name": "Forensic Explainability Compilation",
+        "status": "pending",
+        "purpose": "Assemble structured evidence-annotated JSON and Markdown forensic reports with inline frame citations.",
+        "backendScript": "src/pipeline/stage5_explainability.py",
+        "input": "All earlier stage JSON artifacts",
+        "output": "_explained.json & _explained.md",
+        "progress": 0,
+    },
+]
+
+def probe_video_duration(video_path: str) -> float:
+    try:
+        out = subprocess.check_output([
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "json",
+            video_path
+        ], text=True)
+        return float(json.loads(out)["format"]["duration"])
+    except Exception as e:
+        logging.warning(f"ffprobe duration probe failed: {e}")
+        return 30.0
+
+def run_pipeline_worker(analysis_id: str, video_path: str, config: Dict[str, Any]):
+    job = ACTIVE_JOBS.get(analysis_id)
+    if not job:
+        return
+
+    stages = job["stages"]
+    video_name = os.path.splitext(os.path.basename(video_path))[0]
+    captions_file = os.path.join("output", f"{video_name}_captions.json")
+
+    backend_name = config.get("backend") or os.getenv("CAPTIONING_BACKEND", "groq")
+    threshold = float(config.get("sceneThreshold", 30.0))
+    frames_per_scene = int(config.get("framesPerScene", 4))
+
+    def update_stage(stage_id: str, status: str, progress: int, error_msg: Optional[str] = None):
+        for s in stages:
+            if s["id"] == stage_id:
+                s["status"] = status
+                s["progress"] = progress
+                if error_msg:
+                    s["errorMsg"] = error_msg
+                break
+
+    try:
+        # Stage 1: Captioning
+        update_stage("captioning", "processing", 15)
+        os.environ["CAPTIONING_BACKEND"] = backend_name
+        logging.info(f"[{analysis_id}] Starting Stage 1 Captioning ({backend_name})...")
+        run_captioning_stage(video_path, output_dir="output", num_frames_per_scene=frames_per_scene, threshold=threshold)
+        update_stage("captioning", "completed", 100)
+
+        # Stage 2: Narrative
+        update_stage("narrative", "processing", 20)
+        logging.info(f"[{analysis_id}] Starting Stage 2 Narrative...")
+        generate_narrative(captions_file, output_dir="output")
+        update_stage("narrative", "completed", 100)
+
+        # Stage 3: Causal
+        update_stage("causal", "processing", 20)
+        logging.info(f"[{analysis_id}] Starting Stage 3 Causal Inference...")
+        generate_causal_narrative(captions_file, output_dir="output")
+        update_stage("causal", "completed", 100)
+
+        # Stage 4: Verification
+        update_stage("verification", "processing", 25)
+        logging.info(f"[{analysis_id}] Starting Stage 4 Verification...")
+        generate_verification_report(captions_file, output_dir="output")
+        update_stage("verification", "completed", 100)
+
+        # Stage 5: Explainability
+        update_stage("explainability", "processing", 50)
+        logging.info(f"[{analysis_id}] Starting Stage 5 Explainability...")
+        generate_explainability_report(captions_file, output_dir="output")
+        update_stage("explainability", "completed", 100)
+
+        job["status"] = "completed"
+        logging.info(f"[{analysis_id}] Pipeline completed successfully!")
+
+    except Exception as e:
+        logging.error(f"[{analysis_id}] Pipeline failed: {e}", exc_info=True)
+        job["status"] = "failed"
+        job["error"] = str(e)
+        for s in stages:
+            if s["status"] == "processing":
+                s["status"] = "error"
+                s["errorMsg"] = str(e)
+
+# --- REST Endpoints ---
+
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok", "service": "VERITAS-V Backend"}
+
+@app.post("/api/analysis/upload")
+async def upload_video(video: UploadFile = File(...)):
+    filename = video.filename or "uploaded_video.mp4"
+    safe_stem = Path(filename).stem.replace(" ", "_")
+    target_path = os.path.join("media", f"{safe_stem}.mp4")
+
+    with open(target_path, "wb") as f:
+        shutil.copyfileobj(video.file, f)
+
+    file_size_bytes = os.path.getsize(target_path)
+    file_size_mb = f"{(file_size_bytes / (1024 * 1024)):.1f} MB"
+    duration = probe_video_duration(target_path)
+
+    analysis_id = f"analysis_{safe_stem}_{int(time.time())}"
+
+    # Initialize job in registry
+    ACTIVE_JOBS[analysis_id] = {
+        "id": analysis_id,
+        "video_name": f"{safe_stem}.mp4",
+        "video_path": target_path,
+        "file_size": file_size_mb,
+        "duration": duration,
+        "status": "pending",
+        "stages": [dict(s) for s in DEFAULT_STAGES],
+    }
+
+    return {
+        "id": analysis_id,
+        "name": f"{safe_stem}.mp4",
+        "size": file_size_mb,
+        "duration": round(duration, 1),
+    }
+
+class StartAnalysisRequest(BaseModel):
+    backend: Optional[str] = "groq"
+    sceneThreshold: Optional[float] = 30.0
+    framesPerScene: Optional[int] = 4
+    whisperEnabled: Optional[bool] = True
+    strictness: Optional[str] = "rigorous"
+    sceneCaptions: Optional[bool] = True
+    narrative: Optional[bool] = True
+    causalReasoning: Optional[bool] = True
+    verifyHallucinations: Optional[bool] = True
+    explainability: Optional[bool] = True
+    diarization: Optional[bool] = False
+
+@app.post("/api/analysis/{analysis_id}/start")
+async def start_analysis(analysis_id: str, req: StartAnalysisRequest, background_tasks: BackgroundTasks):
+    job = ACTIVE_JOBS.get(analysis_id)
+    if not job:
+        # Check if video exists directly in media/
+        clean_id = analysis_id.replace("analysis_", "")
+        possible_media = os.path.join("media", f"{clean_id}.mp4")
+        if os.path.exists(possible_media):
+            dur = probe_video_duration(possible_media)
+            sz = f"{(os.path.getsize(possible_media) / (1024 * 1024)):.1f} MB"
+            job = {
+                "id": analysis_id,
+                "video_name": f"{clean_id}.mp4",
+                "video_path": possible_media,
+                "file_size": sz,
+                "duration": dur,
+                "status": "pending",
+                "stages": [dict(s) for s in DEFAULT_STAGES],
+            }
+            ACTIVE_JOBS[analysis_id] = job
+        else:
+            raise HTTPException(status_code=404, detail="Analysis job not found")
+
+    job["status"] = "processing"
+    config_dict = req.model_dump()
+
+    # Launch background execution thread
+    threading.Thread(
+        target=run_pipeline_worker,
+        args=(analysis_id, job["video_path"], config_dict),
+        daemon=True
+    ).start()
+
+    return {"status": "started", "analysisId": analysis_id}
+
+@app.get("/api/analysis/{analysis_id}/status")
+def get_pipeline_status(analysis_id: str):
+    job = ACTIVE_JOBS.get(analysis_id)
+    if job:
+        return {"stages": job["stages"], "status": job["status"]}
+
+    # If already completed on disk
+    clean_stem = analysis_id.replace("analysis_", "")
+    # Check if explained artifact exists
+    explained_candidates = glob.glob(f"output/*{clean_stem}*_explained.json") + glob.glob(f"VERITAS-V/output/*{clean_stem}*_explained.json")
+    if explained_candidates:
+        completed_stages = [
+            {**s, "status": "completed", "progress": 100}
+            for s in DEFAULT_STAGES
+        ]
+        return {"stages": completed_stages, "status": "completed"}
+
+    raise HTTPException(status_code=404, detail="Analysis ID not found")
+
+@app.get("/api/analysis/history")
+def get_analysis_history():
+    history: List[Dict[str, Any]] = []
+    seen_videos = set()
+
+    # 1. Check all output/*_explained.json files
+    explained_files = glob.glob("output/*_explained.json") + glob.glob("VERITAS-V/output/*_explained.json")
+    for exp_path in explained_files:
+        video_stem = os.path.basename(exp_path).removesuffix("_explained.json")
+        if video_stem in seen_videos:
+            continue
+        seen_videos.add(video_stem)
+
+        analysis_obj = build_video_analysis(f"analysis_{video_stem}", f"{video_stem}.mp4")
+        history.append(analysis_obj)
+
+    # 2. Add any active jobs not yet finished
+    for a_id, job in ACTIVE_JOBS.items():
+        v_stem = os.path.splitext(job["video_name"])[0]
+        if v_stem not in seen_videos:
+            history.append({
+                "id": a_id,
+                "videoName": job["video_name"],
+                "videoUrl": f"/media/{job['video_name']}",
+                "fileSize": job.get("file_size", "0 MB"),
+                "duration": round(job.get("duration", 0), 1),
+                "dateAnalyzed": "Just now",
+                "status": job.get("status", "processing"),
+                "trustScore": 0,
+                "scenesCount": 0,
+                "statementsCount": 0,
+                "verifiedCount": 0,
+                "hallucinationsCount": 0,
+                "scenes": [],
+                "causalRelations": [],
+                "verifications": [],
+                "explainability": [],
+                "speakers": [],
+                "narrativeText": "",
+            })
+
+    return history
+
+@app.get("/api/analysis/{analysis_id}")
+def get_analysis_details(analysis_id: str):
+    # Determine video name
+    job = ACTIVE_JOBS.get(analysis_id)
+    video_name = job["video_name"] if job else None
+
+    if not video_name:
+        clean_stem = analysis_id.replace("analysis_", "")
+        # Look for matching explained file
+        matches = glob.glob(f"output/*{clean_stem}*_explained.json")
+        if matches:
+            video_name = os.path.basename(matches[0]).removesuffix("_explained.json") + ".mp4"
+        else:
+            # Fallback to direct name
+            video_name = f"{clean_stem}.mp4"
+
+    return build_video_analysis(analysis_id, video_name)
+
+@app.delete("/api/analysis/{analysis_id}")
+def delete_analysis(analysis_id: str):
+    if analysis_id in ACTIVE_JOBS:
+        del ACTIVE_JOBS[analysis_id]
+
+    clean_stem = analysis_id.replace("analysis_", "")
+    # Remove outputs
+    for f in glob.glob(f"output/{clean_stem}*"):
+        try:
+            os.remove(f)
+        except Exception:
+            pass
+
+    return {"deleted": True, "analysisId": analysis_id}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("src.server.app:app", host="127.0.0.1", port=8000, reload=True)

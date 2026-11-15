@@ -8,24 +8,16 @@ from dotenv import load_dotenv
 from src.utils.logging_utils import setup_logger
 from src.utils.explainability_styles import get_style
 
-parser = argparse.ArgumentParser(description="Assemble the final evidence-annotated explained narrative")
-parser.add_argument("--input", required=True, help="Path to a <video>_captions.json file")
-parser.add_argument("--output", required=False, help="Path to output directory (default: same directory as --input)")
-parser.add_argument("--log", required=False, default="logs", help="Path to log directory")
-args = parser.parse_args()
-
 load_dotenv()
-EXPLAINABILITY_STYLE = os.getenv("EXPLAINABILITY_STYLE", "structured")
-
 
 def _load_required(path, label):
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Expected {label} file not found: {path}")
-    with open(path, "r") as f:
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def generate_explainability_report(captions_path, output_dir=None):
+def generate_explainability_report(captions_path, output_dir=None, style=None):
     '''Join captions.json + causal.json + verification.json into the final annotated report.'''
 
     video_name = os.path.basename(captions_path).removesuffix("_captions.json")
@@ -57,7 +49,8 @@ def generate_explainability_report(captions_path, output_dir=None):
             },
         })
 
-    style_fn = get_style(EXPLAINABILITY_STYLE)
+    active_style = style or os.getenv("EXPLAINABILITY_STYLE", "structured")
+    style_fn = get_style(active_style)
     json_records, markdown = style_fn(records)
 
     os.makedirs(output_dir, exist_ok=True)
@@ -69,14 +62,22 @@ def generate_explainability_report(captions_path, output_dir=None):
     with open(md_output_path, "w", encoding="utf-8") as f:
         f.write(markdown)
 
-    logging.info(f"Explained report ({EXPLAINABILITY_STYLE} style) saved to {json_output_path} and {md_output_path}")
+    logging.info(f"Explained report ({active_style} style) saved to {json_output_path} and {md_output_path}")
     return json_output_path, md_output_path
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Assemble the final evidence-annotated explained narrative")
+    parser.add_argument("--input", required=True, help="Path to a <video>_captions.json file")
+    parser.add_argument("--output", required=False, help="Path to output directory (default: same directory as --input)")
+    parser.add_argument("--log", required=False, default="logs", help="Path to log directory")
+    parser.add_argument("--style", required=False, help="Explainability style (structured, narrative_llm)")
+    args = parser.parse_args()
+
+    active_style = args.style or os.getenv("EXPLAINABILITY_STYLE", "structured")
     setup_logger(args.input, output_dir=args.log)
-    logging.info(f"=== Generating explainability report for: {args.input} (style={EXPLAINABILITY_STYLE}) ===")
-    json_output_path, md_output_path = generate_explainability_report(args.input, args.output)
+    logging.info(f"=== Generating explainability report for: {args.input} (style={active_style}) ===")
+    json_output_path, md_output_path = generate_explainability_report(args.input, args.output, style=args.style)
     logging.info("Explainability report complete.")
     print(f"Explained JSON saved to {json_output_path}")
     print(f"Explained narrative (Markdown) saved to {md_output_path}")

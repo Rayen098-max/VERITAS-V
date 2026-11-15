@@ -5,7 +5,10 @@ import logging
 import argparse
 import subprocess
 from dotenv import load_dotenv
-from utils.logging_utils import setup_logger
+try:
+    from src.utils.logging_utils import setup_logger
+except ImportError:
+    from utils.logging_utils import setup_logger
 
 # Supports MSR-VTT and (annotations-only, for now) ActivityNet Captions. Each loader downloads
 # a small sample of videos plus a ground_truth.json mapping video_id -> reference caption(s),

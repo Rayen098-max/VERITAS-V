@@ -12,14 +12,46 @@ export interface PipelineStage {
   errorMsg?: string;
 }
 
+export interface ExtractedFrameItem {
+  frameId: string;
+  sceneId: string;
+  tag: string;
+  timestamp: number;
+  timestampStr: string;
+  frameUrl: string;
+  caption: string;
+  actionSummary: string;
+  primaryActor: string;
+  objects: string[];
+  environment: string;
+  verdict: VerificationStatus;
+  isCentroid?: boolean;
+}
+
+export interface AudioTranscriptSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
 export interface SceneCaption {
   sceneId: string;
   startTime: number;
   endTime: number;
+  centroidTime?: number;
   caption: string;
+  actionSummary?: string;
   confidence: number; // 0 to 100
   keywords: string[];
+  primaryFrame?: string;
   frameFiles: string[];
+  detectedElements?: {
+    primary_actor?: string;
+    objects?: string[];
+    environment?: string;
+  };
+  transcriptText?: string;
+  verdict?: VerificationStatus;
 }
 
 export interface NarrativeSentence {
@@ -96,6 +128,8 @@ export interface VideoAnalysis {
   verifiedCount: number;
   hallucinationsCount: number;
   scenes: SceneCaption[];
+  allExtractedFrames?: ExtractedFrameItem[];
+  audioTranscripts?: AudioTranscriptSegment[];
   causalRelations: CausalRelation[];
   verifications: VerificationResult[];
   explainability: ExplainabilityResult[];
@@ -190,7 +224,7 @@ export interface VideoAnalysisResult {
 
 export interface BenchmarkScoreRecord {
   video_id: string;
-  dataset: 'MSR-VTT' | 'ActivityNet';
+  dataset: 'MSR-VTT' | 'ActivityNet' | 'VideoHallucer' | 'NExT-QA';
   duration: number;
   ground_truth_reference: string;
   generated_narrative: string;
@@ -222,5 +256,21 @@ export interface PipelineExecutionLog {
   level: 'INFO' | 'SUCCESS' | 'WARN' | 'ERROR' | 'METRIC';
   message: string;
   payload?: any;
+}
+
+export type Verdict = 'supported' | 'unverified' | 'contradicted';
+
+/**
+ * Mathematically derives the Trust Score (0-100%) from verdict counts.
+ * Formula: ((supported * 1.0 + unverified * 0.5) / total) * 100
+ */
+export function computeTrust(
+  supportedCount: number,
+  totalCount: number,
+  unverifiedCount: number = 0
+): number {
+  if (totalCount <= 0) return 0;
+  const score = Math.round(((supportedCount * 1.0 + unverifiedCount * 0.5) / totalCount) * 100);
+  return Math.min(100, Math.max(0, score));
 }
 

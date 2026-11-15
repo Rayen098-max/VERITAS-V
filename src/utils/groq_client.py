@@ -26,28 +26,37 @@ def get_groq_keys():
 
 def execute_with_groq_failover(create_func, *args, **kwargs):
     """
-    Executes a function that uses the Groq API (via OpenAI client) with automatic key failover.
-    `create_func` is a callable that takes a `client` as its first argument.
+    Executes a function that uses the Groq API (via OpenAI client) with automatic key failover
+    and rate limit recovery.
     """
     keys = get_groq_keys()
     if not keys:
         raise ValueError("No GROQ_API_KEY or GROQ_API_KEY_X found in environment.")
 
-    last_error = None
-    for attempt, api_key in enumerate(keys):
-        client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
-        try:
-            return create_func(client, *args, **kwargs)
-        except Exception as e:
-            last_error = e
-            error_str = str(e).lower()
-            if "429" in error_str or "rate limit" in error_str or "connection" in error_str:
-                next_key = keys[attempt + 1] if attempt + 1 < len(keys) else None
-                if next_key:
-                    logging.warning(f"[Groq Failover] Rate limit/error on key ending in ...{api_key[-4:]}. Automatically switching to next key...")
-                    time.sleep(1)
-                    continue
-            # If it's not a rate limit or we're out of keys, raise it
-            raise e
-            
-    raise last_error
+    import re
+    max_cycles = 4
+    for cycle in range(max_cycles):
+        for attempt, api_key in enumerate(keys):
+            client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1", max_retries=0)
+            try:
+                return create_func(client, *args, **kwargs)
+            except Exception as e:
+                error_str = str(e).lower()
+                if "429" in error_str or "rate limit" in error_str:
+                    next_key = keys[attempt + 1] if attempt + 1 < len(keys) else None
+                    if next_key:
+                        logging.warning(f"[Groq Failover] Rate limit on key ending in ...{api_key[-4:]}. Switching to next key...")
+                        time.sleep(1)
+                        continue
+                    else:
+                        wait_sec = 15
+                        m = re.search(r'try again in ([\d\.]+)s', str(e))
+                        if m:
+                            wait_sec = max(5, int(float(m.group(1)) + 2))
+                        logging.warning(f"[Groq Rate Limit] All keys rate-limited. Waiting {wait_sec}s for token bucket reset (cycle {cycle+1}/{max_cycles})...")
+                        time.sleep(wait_sec)
+                        break
+                else:
+                    raise e
+    raise RuntimeError("Exceeded maximum retry cycles for Groq API rate limits.")
+

@@ -155,46 +155,105 @@ def qwen25vl_backend(frame_paths, transcript, **kwargs):
         }
 
 
+def gemini_backend(frame_paths, transcript, **kwargs):
+    '''Caption a scene using Google Gemini Multimodal Vision API.'''
+    from src.utils.gemini_client import execute_gemini_vision
+    from src.utils.chat_gpt_utils import safe_json_extract
+
+    valid_images = [p for p in frame_paths.values() if os.path.exists(p) and os.path.getsize(p) > 0]
+    prompt = (
+        "You are VERITAS-V Forensic Perception Engine. Analyze these sequential keyframes and the audio transcript.\n"
+        "Describe ONLY physical actions, visible actors, concrete objects, and audible speech.\n"
+        "Strict anti-fluff rule: Do not invent motives, fictional backstories, or unverified claims.\n"
+        "Return strictly valid JSON:\n"
+        "{\n"
+        '  "caption": "1-2 sentence evidence-grounded description of visible activities.",\n'
+        '  "action_summary": "Short 3-6 word summary of primary physical action.",\n'
+        '  "detected_elements": {\n'
+        '    "primary_actor": "Main visible actor/subject",\n'
+        '    "objects": ["Object1", "Object2"],\n'
+        '    "environment": "Physical setting or background"\n'
+        '  },\n'
+        '  "keywords": ["keyword1", "keyword2", "keyword3"]\n'
+        "}\n\n"
+        f"Audio Transcript Context: '{transcript if transcript else 'No speech detected.'}'"
+    )
+
+    try:
+        raw_text = execute_gemini_vision(prompt, valid_images, json_mode=True)
+        obj = json.loads(safe_json_extract(raw_text))
+        caption = (obj.get("caption") or "").strip()
+        keywords = obj.get("keywords", [])
+        if isinstance(keywords, str):
+            keywords = [kw.strip() for kw in keywords.split(",") if kw.strip()]
+        elif isinstance(keywords, list):
+            keywords = [str(kw).strip() for kw in keywords if str(kw).strip()]
+        else:
+            keywords = []
+
+        return {
+            "caption": caption,
+            "action_summary": obj.get("action_summary", ""),
+            "detected_elements": obj.get("detected_elements", {}),
+            "keywords": keywords
+        }
+    except Exception as e:
+        logging.warning(f"Gemini captioning failed ({e}); falling back to veritas_local.")
+        return _get_veritas_local()(frame_paths, transcript, **kwargs)
+
 def groq_backend(frame_paths, transcript, **kwargs):
-    '''Caption a scene using Groq Vision API with failover.'''
+    '''Caption a scene using Groq Vision API with failover, falling back to Gemini if Vision model unavailable.'''
+    if os.getenv("GEMINI_API_KEY"):
+        return gemini_backend(frame_paths, transcript, **kwargs)
+
     from src.utils.groq_client import execute_with_groq_failover
     from src.utils.chat_gpt_utils import build_prompt_and_images, safe_json_extract
     
     prompt, images = build_prompt_and_images(transcript, frame_paths)
     model = os.getenv("GROQ_VISION_MODEL", "llama-3.2-11b-vision-preview")
     
-    def _call(client):
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": [{"type": "text", "text": prompt}] + images}],
-            max_tokens=400,
-            response_format={"type": "json_object"}
-        )
-        return response.choices[0].message.content.strip()
+    try:
+        def _call(client):
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": [{"type": "text", "text": prompt}] + images}],
+                max_tokens=400,
+                response_format={"type": "json_object"}
+            )
+            return response.choices[0].message.content.strip()
 
-    content = execute_with_groq_failover(_call)
-    obj = json.loads(safe_json_extract(content))
-    caption = (obj.get("caption") or "").strip()
-    keywords = obj.get("keywords", [])
-    if isinstance(keywords, str):
-        keywords = [kw.strip() for kw in keywords.split(",") if kw.strip()]
-    elif isinstance(keywords, list):
-        keywords = [str(kw).strip() for kw in keywords if str(kw).strip()]
-    else:
-        keywords = []
-        
-    return {
-        "caption": caption,
-        "action_summary": obj.get("action_summary", ""),
-        "detected_elements": obj.get("detected_elements", {}),
-        "keywords": keywords
-    }
+        content = execute_with_groq_failover(_call)
+        obj = json.loads(safe_json_extract(content))
+        caption = (obj.get("caption") or "").strip()
+        keywords = obj.get("keywords", [])
+        if isinstance(keywords, str):
+            keywords = [kw.strip() for kw in keywords.split(",") if kw.strip()]
+        elif isinstance(keywords, list):
+            keywords = [str(kw).strip() for kw in keywords if str(kw).strip()]
+        else:
+            keywords = []
+            
+        return {
+            "caption": caption,
+            "action_summary": obj.get("action_summary", ""),
+            "detected_elements": obj.get("detected_elements", {}),
+            "keywords": keywords
+        }
+    except Exception as e:
+        logging.warning(f"Groq vision failed ({e}); falling back to veritas_local.")
+        return _get_veritas_local()(frame_paths, transcript, **kwargs)
+
+def _get_veritas_local():
+    from src.utils.local_model_loader import veritas_local_captioning
+    return veritas_local_captioning
 
 BACKENDS = {
+    "gemini": gemini_backend,
     "gpt4o": gpt4o_backend,
     "qwen25vl": qwen25vl_backend,
     "mock": mock_backend,
     "groq": groq_backend,
+    "veritas_local": lambda *args, **kwargs: _get_veritas_local()(*args, **kwargs),
 }
 
 
