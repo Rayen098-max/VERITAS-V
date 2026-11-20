@@ -93,12 +93,12 @@ def mock_causal_backend(scenes, **kwargs):
 #     it can be parsed directly into the same list[dict] shape the mock backend returns.
 
 def llm_causal_backend(scenes, **kwargs):
-    '''Infer causal links between consecutive scenes using a real LLM via Groq API.'''
+    '''Infer causal links between consecutive scenes using a real LLM via Groq API with cloud failover.'''
     import os
     import json
-    from src.utils.groq_client import execute_with_groq_failover
+    import logging
     
-    model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+    model = os.getenv("LLM_MODEL", "openai/gpt-oss-120b")
 
     scene_ids = sorted(scenes.keys())
     if len(scene_ids) == 1:
@@ -136,30 +136,45 @@ def llm_causal_backend(scenes, **kwargs):
         "causal_statement, confidence}, ...]}\n\n" + json.dumps(pairs, indent=2)
     )
     
-    def _call(client):
-        return client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"}
-        )
-    
-    response = execute_with_groq_failover(_call)
-    
-    content = response.choices[0].message.content.strip()
-    
-    # Try parsing directly
+    # 1. Try Groq Cloud LLM
     try:
+        from src.utils.groq_client import execute_with_groq_failover
+        def _call(client):
+            return client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"}
+            )
+        response = execute_with_groq_failover(_call)
+        content = response.choices[0].message.content.strip()
         data = json.loads(content)
         if isinstance(data, dict):
-            # some models wrap it in a root key like 'links'
             for k in data:
                 if isinstance(data[k], list):
                     return data[k]
-            return [data] # Fallback
+            return [data]
         return data
-    except Exception as e:
-        logging.error(f"Failed to parse Groq response: {content}")
-        raise e
+    except Exception as groq_err:
+        logging.warning(f"Groq causal inference failed ({groq_err}); trying Gemini Flash...")
+
+    # 2. Try Gemini Cloud
+    try:
+        if os.getenv("GEMINI_API_KEY"):
+            from src.utils.gemini_client import execute_gemini_vision
+            from src.utils.chat_gpt_utils import safe_json_extract
+            gem_res = execute_gemini_vision(prompt, [], json_mode=True)
+            data = json.loads(safe_json_extract(gem_res))
+            if isinstance(data, dict):
+                for k in data:
+                    if isinstance(data[k], list):
+                        return data[k]
+                return [data]
+            return data
+    except Exception as gem_err:
+        logging.warning(f"Gemini causal inference failed ({gem_err}); falling back to heuristic mock.")
+
+    # 3. Fallback to mock
+    return mock_causal_backend(scenes, **kwargs)
 
 
 def _get_veritas_local():

@@ -19,6 +19,6 @@ services:
       - key: EXPLAINABILITY_BACKEND
         value: groq
       - key: LLM_MODEL
-        value: llama-3.3-70b-versatile
+        value: openai/gpt-oss-120b
       - key: GEMINI_VISION_MODEL
         value: gemini-3-flash-preview

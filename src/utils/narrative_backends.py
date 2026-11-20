@@ -52,10 +52,10 @@ def mock_narrative_backend(scenes, **kwargs):
 #     build_prompt_and_images() in chat_gpt_utils.py, but text-only (no images needed here).
 
 def llm_narrative_backend(scenes, **kwargs):
-    '''Generate a narrative using a real LLM via Groq API.'''
+    '''Generate a narrative using a real LLM via Groq API with failover to Gemini and Mock.'''
     import os
-    from src.utils.groq_client import execute_with_groq_failover
-    model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+    import logging
+    model = os.getenv("LLM_MODEL", "openai/gpt-oss-120b")
 
     scene_lines = []
     for scene_id in sorted(scenes.keys()):
@@ -75,14 +75,29 @@ def llm_narrative_backend(scenes, **kwargs):
         + "\n".join(scene_lines)
     )
     
-    def _call(client):
-        return client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        
-    response = execute_with_groq_failover(_call)
-    return response.choices[0].message.content.strip()
+    # 1. Try Groq Cloud LLM
+    try:
+        from src.utils.groq_client import execute_with_groq_failover
+        def _call(client):
+            return client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}]
+            )
+        response = execute_with_groq_failover(_call)
+        return response.choices[0].message.content.strip()
+    except Exception as groq_err:
+        logging.warning(f"Groq narrative synthesis failed ({groq_err}); trying Gemini Flash...")
+
+    # 2. Try Gemini Cloud
+    try:
+        if os.getenv("GEMINI_API_KEY"):
+            from src.utils.gemini_client import execute_gemini_vision
+            return execute_gemini_vision(prompt, [], json_mode=False).strip()
+    except Exception as gem_err:
+        logging.warning(f"Gemini narrative synthesis failed ({gem_err}); falling back to heuristic mock.")
+
+    # 3. Fallback to mock
+    return mock_narrative_backend(scenes, **kwargs)
 
 
 BACKENDS = {

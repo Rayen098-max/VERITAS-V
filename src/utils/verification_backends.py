@@ -75,8 +75,8 @@ def llm_verification_backend(claims, scenes, **kwargs):
     from src.utils.groq_client import execute_with_groq_failover
     from src.utils.chat_gpt_utils import encode_image_to_base64, safe_json_extract
 
-    vision_model = os.getenv("GROQ_VISION_MODEL", "llama-3.2-11b-vision-preview")
-    text_model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+    vision_model = os.getenv("GROQ_VISION_MODEL", "qwen/qwen3.8-27b")
+    text_model = os.getenv("LLM_MODEL", "openai/gpt-oss-120b")
 
     results = []
     for claim in claims:
