@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: veritas-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: CAPTIONING_BACKEND
+        value: gemini
+      - key: NARRATIVE_BACKEND
+        value: groq
+      - key: CAUSAL_BACKEND
+        value: groq
+      - key: VERIFICATION_BACKEND
+        value: gemini
+      - key: EXPLAINABILITY_BACKEND
+        value: groq
+      - key: LLM_MODEL
+        value: llama-3.3-70b-versatile
+      - key: GEMINI_VISION_MODEL
+        value: gemini-2.0-flash
