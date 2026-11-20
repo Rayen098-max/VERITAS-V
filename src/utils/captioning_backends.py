@@ -24,7 +24,7 @@ def mock_backend(frame_paths, transcript, scene_id=None, **kwargs):
             "objects": ["mock_obj1", "mock_obj2"],
             "environment": "mock env"
         },
-        "keywords": ["mock", "scene", scene_id]
+        "keywords": [str(k) for k in ["mock", "scene", scene_id] if k is not None]
     }
 
 
@@ -138,7 +138,7 @@ def qwen25vl_backend(frame_paths, transcript, **kwargs):
         if isinstance(keywords, str):
             keywords = [kw.strip() for kw in keywords.split(",") if kw.strip()]
         elif isinstance(keywords, list):
-            keywords = [str(kw).strip() for kw in keywords if str(kw).strip()]
+            keywords = [str(kw).strip() for kw in keywords if kw is not None and str(kw).strip()]
         else:
             keywords = []
         
@@ -190,7 +190,7 @@ def gemini_backend(frame_paths, transcript, **kwargs):
         if isinstance(keywords, str):
             keywords = [kw.strip() for kw in keywords.split(",") if kw.strip()]
         elif isinstance(keywords, list):
-            keywords = [str(kw).strip() for kw in keywords if str(kw).strip()]
+            keywords = [str(kw).strip() for kw in keywords if kw is not None and str(kw).strip()]
         else:
             keywords = []
 
@@ -232,7 +232,7 @@ def groq_backend(frame_paths, transcript, **kwargs):
         if isinstance(keywords, str):
             keywords = [kw.strip() for kw in keywords.split(",") if kw.strip()]
         elif isinstance(keywords, list):
-            keywords = [str(kw).strip() for kw in keywords if str(kw).strip()]
+            keywords = [str(kw).strip() for kw in keywords if kw is not None and str(kw).strip()]
         else:
             keywords = []
             

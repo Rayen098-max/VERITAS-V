@@ -14,11 +14,19 @@ __pycache__/
 .venv/
 
 # Generated files and media
-frames/
+/frames/
+!public/frames/
+!public/frames/**
 captions/
 output/
 tmp/
-media/
+/media/*
+!/media/sample_clip.mp4
+!/media/my_video.mp4
+!/media/Newvideo.mp4
+!/media/nextqa_*.mp4
+!public/media/
+!public/media/**
 transcripts/
 logs/
 

@@ -9,6 +9,7 @@ export interface PipelineStage {
   input: string;
   output: string;
   progress?: number; // 0 to 100
+  message?: string;
   errorMsg?: string;
 }
 

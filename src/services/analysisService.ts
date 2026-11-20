@@ -253,9 +253,20 @@ export const analysisService = {
         if (response.ok) {
           const data = await response.json();
           return data.stages;
+        } else if (response.status === 404) {
+          // May be spinning up or writing results; check Supabase fallback first
+          const cloudRecord = await fetchAnalysisByIdFromSupabase(id).catch(() => null);
+          if (cloudRecord && cloudRecord.status === 'completed' && cloudRecord.scenes.length > 0) {
+            return PIPELINE_STAGES.map(s => ({ ...s, status: 'completed', progress: 100 }));
+          }
+          throw new Error(`Analysis job '${id}' not yet available on server (404).`);
+        } else {
+          const errDetail = await response.text().catch(() => '');
+          throw new Error(`Server status returned ${response.status}: ${errDetail || 'Internal server error'}`);
         }
-      } catch (err) {
-        console.warn('Polling status from backend failed; checking Supabase fallback.', err);
+      } catch (err: any) {
+        console.warn('Backend status check:', err?.message || err);
+        throw err;
       }
     }
 

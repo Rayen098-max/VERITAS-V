@@ -3,61 +3,50 @@ import type { VideoAnalysis, PipelineStage } from '../types';
 // Standard pipeline stages metadata matching the backend python scripts
 export const PIPELINE_STAGES: Omit<PipelineStage, 'status'>[] = [
   {
-    id: 'loading',
-    name: 'Video Loading',
-    purpose: 'Downloads or loads the video segment from the dataset.',
-    backendScript: 'load_dataset_sample.py',
-    input: 'Video ID or filepath',
-    output: 'Local raw video file'
-  },
-  {
     id: 'captioning',
-    name: 'Video Captioning',
-    purpose: 'Performs scene detection, extracts frames, transcribe speech, and generates scene captions using Qwen2.5-VL.',
-    backendScript: 'captioning.py / generate_captions.py',
-    input: 'Raw video segments',
-    output: 'Per-scene captions and transcripts JSON'
+    name: 'Scene Detection & Keyframe Extraction',
+    purpose: 'Detect cuts with PySceneDetect, sample keyframes, transcribe audio via Whisper, and generate grounded captions.',
+    backendScript: 'src/pipeline/stage1_captioning.py',
+    input: 'Raw Video (.mp4)',
+    output: '_captions.json',
+    progress: 0,
   },
   {
     id: 'narrative',
-    name: 'Narrative Generation',
-    purpose: 'Aggregates the individual scene captions and transcriptions into a coherent global narrative document.',
-    backendScript: 'generate_narrative.py',
-    input: 'Scene captions JSON',
-    output: 'Coherent markdown/text narrative'
+    name: 'Chronological Narrative Synthesis',
+    purpose: 'Merge per-scene captions and transcripts into a continuous video narrative.',
+    backendScript: 'src/pipeline/stage2_narrative.py',
+    input: '_captions.json',
+    output: '_narrative.txt',
+    progress: 0,
   },
   {
     id: 'causal',
-    name: 'Causal Reasoning',
-    purpose: 'Analyzes sequence of events and infers logical cause-effect relationships between scenes.',
-    backendScript: 'generate_causal_narrative.py',
-    input: 'Narrative + captions JSON',
-    output: 'Causal relationship graph / JSON'
+    name: 'Causal Link Inference',
+    purpose: 'Infer cause-and-effect relationships between consecutive scenes using LLM structured reasoning.',
+    backendScript: 'src/pipeline/stage3_causal.py',
+    input: '_captions.json',
+    output: '_causal.json',
+    progress: 0,
   },
   {
     id: 'verification',
     name: 'Hallucination Verification',
-    purpose: 'Critically verifies causal claims against extracted frame images to detect visual hallucinations.',
-    backendScript: 'generate_verification_report.py',
-    input: 'Causal claims + scene frame files',
-    output: 'Verification report with supported/unsupported/uncertain verdicts'
+    purpose: 'Check each causal claim against visual frame keyframes to detect and flag hallucinations.',
+    backendScript: 'src/pipeline/stage4_verification.py',
+    input: '_causal.json + _captions.json',
+    output: '_verification.json',
+    progress: 0,
   },
   {
     id: 'explainability',
-    name: 'Explainability Analysis',
-    purpose: 'Assembles a final annotated report linking claims to their exact timestamps, verdicts, and frame evidence.',
-    backendScript: 'generate_explainability_report.py',
-    input: 'Verification report + causal links + scene data',
-    output: 'Annotated explainability narrative & JSON report'
+    name: 'Forensic Explainability Compilation',
+    purpose: 'Assemble structured evidence-annotated JSON and Markdown forensic reports with inline frame citations.',
+    backendScript: 'src/pipeline/stage5_explainability.py',
+    input: 'All earlier stage JSON artifacts',
+    output: '_explained.json & _explained.md',
+    progress: 0,
   },
-  {
-    id: 'diarization',
-    name: 'Speaker Diarization',
-    purpose: 'Identifies speakers and maps timestamps to transcription segments.',
-    backendScript: 'diarization.py / speaker_map.json',
-    input: 'Audio track',
-    output: 'Diarized speaker transcription segments'
-  }
 ];
 
 export const MOCK_ANALYSES: VideoAnalysis[] = [

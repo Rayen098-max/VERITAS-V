@@ -38,7 +38,7 @@ def mock_causal_backend(scenes, **kwargs):
 
         prev_id = scene_ids[i - 1]
         prev_scene = scenes[prev_id]
-        overlap_keywords = set(scene.get("keywords") or []) & set(prev_scene.get("keywords") or [])
+        overlap_keywords = set(str(k) for k in (scene.get("keywords") or []) if k is not None) & set(str(k) for k in (prev_scene.get("keywords") or []) if k is not None)
         
         cur_elements = scene.get("detected_elements", {})
         prev_elements = prev_scene.get("detected_elements", {})
@@ -47,15 +47,17 @@ def mock_causal_backend(scenes, **kwargs):
         prev_actor = (prev_elements.get("primary_actor") or "").lower()
         shared_actor = bool(cur_actor and cur_actor == prev_actor)
         
-        overlap_objects = set(cur_elements.get("objects") or []) & set(prev_elements.get("objects") or [])
+        cur_objects = [str(o) for o in (cur_elements.get("objects") or []) if o is not None]
+        prev_objects = [str(o) for o in (prev_elements.get("objects") or []) if o is not None]
+        overlap_objects = set(cur_objects) & set(prev_objects)
         
         if shared_actor or overlap_objects or overlap_keywords:
             cause = (prev_scene.get("caption") or "").strip()
             
             reasons = []
             if shared_actor: reasons.append(f"shared actor: {cur_actor}")
-            if overlap_objects: reasons.append(f"shared objects: {sorted(overlap_objects)}")
-            if overlap_keywords: reasons.append(f"shared keywords: {sorted(overlap_keywords)}")
+            if overlap_objects: reasons.append(f"shared objects: {sorted(str(o) for o in overlap_objects)}")
+            if overlap_keywords: reasons.append(f"shared keywords: {sorted(str(k) for k in overlap_keywords)}")
             reason_str = ", ".join(reasons)
             
             results.append({

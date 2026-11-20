@@ -84,14 +84,16 @@ export default function NewAnalysis() {
       duration: 118,
       category: "India's Got Latent · Magic Card Sleight",
       thumbnail: '/frames/Newvideo_frames/Newvideo_scene_001_start.jpg',
+      videoUrl: 'https://veritas-v-one.vercel.app/media/Newvideo.mp4',
     },
     {
       id: 'sample_my_video',
       name: 'my_video.mp4',
-      size: '42.1 MB',
+      size: '2.9 MB',
       duration: 66,
       category: 'Keynote Presentation Audit',
       thumbnail: '/frames/my_video_frames/my_video_scene_001_start.jpg',
+      videoUrl: 'https://veritas-v-one.vercel.app/media/my_video.mp4',
     },
     {
       id: 'sample_clip_jump',
@@ -100,6 +102,7 @@ export default function NewAnalysis() {
       duration: 15,
       category: 'Athletics Kinetic Sequence',
       thumbnail: '/frames/sample_clip_frames/sample_clip_scene_001_start.jpg',
+      videoUrl: 'https://veritas-v-one.vercel.app/media/sample_clip.mp4',
     },
     {
       id: 'sample_dog_hallucination',
@@ -108,19 +111,21 @@ export default function NewAnalysis() {
       duration: 10,
       category: 'Hallucination Benchmark Probe',
       thumbnail: '/frames/sample_clip_frames/sample_clip_scene_001_t1.jpg',
+      videoUrl: 'https://veritas-v-one.vercel.app/media/sample_clip.mp4',
     },
   ];
 
   const handleSelectSample = (sample: typeof sampleVideos[0]) => {
     setErrorMessage(null);
     setVideoFile(null);
-    setVideoPreviewUrl(null);
+    setVideoPreviewUrl(sample.videoUrl || null);
     setUploadedDetails({
       id: sample.id,
       name: sample.name,
       size: sample.size,
       duration: sample.duration,
       thumbnail: sample.thumbnail,
+      videoUrl: sample.videoUrl,
     });
   };
 
@@ -275,9 +280,13 @@ export default function NewAnalysis() {
 
   // Poll Pipeline Progress
   const pollPipeline = (id: string) => {
+    let failureCount = 0;
+    const maxRetries = 6;
+
     const timer = setInterval(async () => {
       try {
         const stages = await analysisService.getPipelineProgress(id);
+        failureCount = 0; // Reset consecutive failure counter on successful poll
         setPipelineStages(stages);
 
         // Dynamically log stage progression into terminal console
@@ -286,20 +295,33 @@ export default function NewAnalysis() {
             const compMsg = `[DONE] ${s.name} completed successfully.`;
             setActiveLogs((prev) => prev.includes(compMsg) ? prev : [...prev, compMsg]);
           } else if (s.status === 'processing') {
-            const procMsg = `[STAGE] Processing ${s.name} (${s.progress}%)...`;
-            setActiveLogs((prev) => prev.includes(procMsg) ? prev : [...prev, procMsg]);
+            const detailMsg = s.message ? ` - ${s.message}` : '';
+            const procMsg = `[STAGE] Processing ${s.name} (${s.progress}%)${detailMsg}`;
+            setActiveLogs((prev) => {
+              if (prev.length > 0 && prev[prev.length - 1] === procMsg) {
+                return prev;
+              }
+              return [...prev, procMsg];
+            });
           }
         });
 
         // Dynamically simulate streaming scene frames
         const currentStage = stages.find(s => s.status === 'processing');
-        const isNewVideo = uploadedDetails?.name?.toLowerCase().includes('newvideo');
+        const vName = uploadedDetails?.name?.toLowerCase() || '';
+        const isNewVideo = vName.includes('newvideo');
+        const isSampleClip = vName.includes('sample_clip') || vName.includes('videohallucer');
         if (currentStage?.id === 'captioning' && discoveredScenes.length < 2) {
           setDiscoveredScenes(
             isNewVideo
               ? [
                   '/frames/Newvideo_frames/Newvideo_scene_001_start.jpg',
                   '/frames/Newvideo_frames/Newvideo_scene_002_t2.jpg',
+                ]
+              : isSampleClip
+              ? [
+                  '/frames/sample_clip_frames/sample_clip_scene_001_start.jpg',
+                  '/frames/sample_clip_frames/sample_clip_scene_001_centroid.jpg',
                 ]
               : [
                   '/frames/my_video_frames/my_video_scene_001_start.jpg',
@@ -316,6 +338,13 @@ export default function NewAnalysis() {
                   '/frames/Newvideo_frames/Newvideo_scene_004_t4.jpg',
                   '/frames/Newvideo_frames/Newvideo_scene_006_t2.jpg',
                   '/frames/Newvideo_frames/Newvideo_scene_007_t3.jpg',
+                ]
+              : isSampleClip
+              ? [
+                  '/frames/sample_clip_frames/sample_clip_scene_001_start.jpg',
+                  '/frames/sample_clip_frames/sample_clip_scene_001_centroid.jpg',
+                  '/frames/sample_clip_frames/sample_clip_scene_001_t1.jpg',
+                  '/frames/sample_clip_frames/sample_clip_scene_001_end.jpg',
                 ]
               : [
                   '/frames/my_video_frames/my_video_scene_001_start.jpg',
@@ -342,6 +371,7 @@ export default function NewAnalysis() {
         if (allFinished) {
           clearInterval(timer);
           setIsCompleted(true);
+          setIsAnalyzing(false);
           setActiveLogs((prev) => [
             ...prev,
             '[SUCCESS] Stage 4: Hallucination Verification complete.',
@@ -349,9 +379,19 @@ export default function NewAnalysis() {
             '[SYSTEM] Ready for interactive visual inspection.',
           ]);
         }
-      } catch (err) {
-        console.error(err);
-        clearInterval(timer);
+      } catch (err: any) {
+        failureCount += 1;
+        console.warn(`Polling attempt ${failureCount}/${maxRetries} failed:`, err);
+        if (failureCount >= maxRetries) {
+          clearInterval(timer);
+          setIsAnalyzing(false);
+          const errMsg = err?.message || 'Server connection lost during analysis';
+          setActiveLogs((prev) => [
+            ...prev,
+            `[CONNECTION ERROR] Polling aborted after ${maxRetries} failed attempts: ${errMsg}`,
+          ]);
+          setErrorMessage(`Analysis polling halted: ${errMsg}. Please verify backend status.`);
+        }
       }
     }, 900);
   };
@@ -490,6 +530,9 @@ export default function NewAnalysis() {
                       <img
                         src={uploadedDetails.thumbnail || '/frames/my_video_frames/my_video_scene_001_start.jpg'}
                         alt={uploadedDetails.name}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = '/frames/my_video_frames/my_video_scene_001_start.jpg';
+                        }}
                         className="w-full h-full object-cover opacity-90"
                       />
                     )}
@@ -830,7 +873,14 @@ export default function NewAnalysis() {
                       key={i}
                       className="relative w-36 aspect-video shrink-0 rounded-[8px] overflow-hidden border border-[#6D5EF5]/40 shadow-xs animate-in fade-in"
                     >
-                      <img src={src} alt="Discovered Keyframe" className="w-full h-full object-cover" />
+                      <img
+                        src={src}
+                        alt="Discovered Keyframe"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = '/frames/my_video_frames/my_video_scene_001_start.jpg';
+                        }}
+                        className="w-full h-full object-cover"
+                      />
                       <div className="absolute top-1 left-1 px-1 rounded bg-black/75 text-[9px] font-mono text-white">
                         Scene 00{i + 1}
                       </div>

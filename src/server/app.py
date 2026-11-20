@@ -192,47 +192,59 @@ def run_pipeline_worker(analysis_id: str, video_path: str, config: Dict[str, Any
         backend_name = "gemini" if os.getenv("GEMINI_API_KEY") else "groq"
     threshold = float(config.get("sceneThreshold", 30.0))
     frames_per_scene = int(config.get("framesPerScene", 4))
+    whisper_enabled = config.get("whisperEnabled", True)
+    disable_audio = not whisper_enabled or os.getenv("DISABLE_AUDIO", "false").lower() in ("true", "1", "yes")
 
-    def update_stage(stage_id: str, status: str, progress: int, error_msg: Optional[str] = None):
+    def update_stage(stage_id: str, status: str, progress: int, message: Optional[str] = None):
         for s in stages:
             if s["id"] == stage_id:
                 s["status"] = status
                 s["progress"] = progress
-                if error_msg:
-                    s["errorMsg"] = error_msg
+                if message:
+                    s["message"] = message
+                    if status == "error":
+                        s["errorMsg"] = message
                 break
 
     try:
         # Stage 1: Captioning
-        update_stage("captioning", "processing", 15)
+        update_stage("captioning", "processing", 15, "Detecting scene cuts...")
         os.environ["CAPTIONING_BACKEND"] = backend_name
         logging.info(f"[{analysis_id}] Starting Stage 1 Captioning ({backend_name})...")
-        run_captioning_stage(video_path, output_dir="output", num_frames_per_scene=frames_per_scene, threshold=threshold)
-        update_stage("captioning", "completed", 100)
+        run_captioning_stage(
+            video_path,
+            output_dir="output",
+            num_frames_per_scene=frames_per_scene,
+            threshold=threshold,
+            backend=backend_name,
+            disable_audio=disable_audio,
+            progress_callback=update_stage
+        )
+        update_stage("captioning", "completed", 100, "Scene detection and keyframe captioning complete.")
 
         # Stage 2: Narrative
-        update_stage("narrative", "processing", 20)
+        update_stage("narrative", "processing", 20, "Synthesizing chronological video narrative...")
         logging.info(f"[{analysis_id}] Starting Stage 2 Narrative...")
         generate_narrative(captions_file, output_dir="output")
-        update_stage("narrative", "completed", 100)
+        update_stage("narrative", "completed", 100, "Chronological narrative generated.")
 
         # Stage 3: Causal
-        update_stage("causal", "processing", 20)
+        update_stage("causal", "processing", 20, "Inferring causal relationships between scenes...")
         logging.info(f"[{analysis_id}] Starting Stage 3 Causal Inference...")
         generate_causal_narrative(captions_file, output_dir="output")
-        update_stage("causal", "completed", 100)
+        update_stage("causal", "completed", 100, "Causal graph reasoning complete.")
 
         # Stage 4: Verification
-        update_stage("verification", "processing", 25)
+        update_stage("verification", "processing", 25, "Verifying claims against visual evidence frames...")
         logging.info(f"[{analysis_id}] Starting Stage 4 Verification...")
         generate_verification_report(captions_file, output_dir="output")
-        update_stage("verification", "completed", 100)
+        update_stage("verification", "completed", 100, "Visual hallucination verification complete.")
 
         # Stage 5: Explainability
-        update_stage("explainability", "processing", 50)
+        update_stage("explainability", "processing", 50, "Compiling dual-format forensic explainability reports...")
         logging.info(f"[{analysis_id}] Starting Stage 5 Explainability...")
         generate_explainability_report(captions_file, output_dir="output")
-        update_stage("explainability", "completed", 100)
+        update_stage("explainability", "completed", 100, "Forensic explainability reports generated.")
 
         job["status"] = "completed"
         logging.info(f"[{analysis_id}] Pipeline completed successfully!")
@@ -318,30 +330,53 @@ async def start_analysis(analysis_id: str, req: StartAnalysisRequest, background
     os.makedirs("frames", exist_ok=True)
     target_media = os.path.join("media", f"{clean_id}.mp4")
 
-    # If video_url was provided (e.g. from Supabase Storage), download it!
+    # 1. First, check if video is already available locally by video_name or clean_id
+    if req.video_name:
+        for check_dir in ["media", "public/media", "VERITAS-V/media"]:
+            candidate = os.path.join(check_dir, req.video_name)
+            if os.path.exists(candidate) and os.path.getsize(candidate) > 1024:
+                target_media = candidate
+                break
+
+    # 2. If video_url was provided (e.g. from Supabase Storage), download it!
     if req.video_url and not os.path.exists(target_media):
-        logging.info(f"[{analysis_id}] Fetching video from remote URL: {req.video_url}")
+        dl_url = req.video_url
+        if dl_url.startswith("/"):
+            dl_url = f"https://veritas-v-one.vercel.app{dl_url}"
+
+        logging.info(f"[{analysis_id}] Fetching video from remote URL: {dl_url}")
         try:
             dl_headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             }
             supa_key = os.getenv("SUPABASE_KEY")
-            if supa_key and "supabase.co" in req.video_url:
+            if supa_key and "supabase.co" in dl_url:
                 dl_headers["apikey"] = supa_key
                 dl_headers["Authorization"] = f"Bearer {supa_key}"
 
-            with requests.get(req.video_url, headers=dl_headers, stream=True, timeout=120) as r:
+            with requests.get(dl_url, headers=dl_headers, stream=True, timeout=120) as r:
                 r.raise_for_status()
+                content_type = r.headers.get("Content-Type", "").lower()
+                if "text/html" in content_type:
+                    raise ValueError(f"URL returned HTML document ({content_type}) instead of video stream")
+
                 with open(target_media, "wb") as f:
                     for chunk in r.iter_content(chunk_size=1024 * 1024):
                         if chunk:
                             f.write(chunk)
             logging.info(f"[{analysis_id}] Video downloaded successfully ({os.path.getsize(target_media)} bytes)")
         except Exception as dl_err:
-            logging.error(f"Failed to download video from {req.video_url}: {dl_err}")
+            logging.error(f"Failed to download video from {dl_url}: {dl_err}")
+            if os.path.exists(target_media):
+                try:
+                    os.remove(target_media)
+                except Exception:
+                    pass
             # If target_media doesn't exist, check if there's any file in media/ matching clean_stem
             clean_stem = clean_id.split("_")[0]
             existing = [os.path.join("media", f) for f in os.listdir("media") if clean_stem.lower() in f.lower() and f.endswith((".mp4", ".mov", ".avi", ".webm"))] if os.path.exists("media") else []
+            if not existing and os.path.exists("public/media"):
+                existing = [os.path.join("public/media", f) for f in os.listdir("public/media") if clean_stem.lower() in f.lower() and f.endswith((".mp4", ".mov", ".avi", ".webm"))]
             if existing:
                 target_media = existing[0]
                 logging.info(f"Falling back to existing local media file: {target_media}")

@@ -54,7 +54,13 @@ export default function Layout() {
   return (
     <div className="relative min-h-screen w-full bg-[var(--bg-primary)] text-[var(--text-primary)] flex flex-col font-sans transition-colors duration-200">
       {/* Floating Top Navigation Bar */}
-      <header className="fixed top-0 left-0 right-0 z-50 px-4 sm:px-6 pt-3 pointer-events-none">
+      <header
+        className={`fixed top-0 left-0 right-0 z-40 transition-all duration-300 pointer-events-none px-4 sm:px-6 ${
+          scrolled
+            ? 'pt-2 pb-2.5 bg-[var(--bg-primary)]/85 backdrop-blur-md border-b border-[var(--border-subtle)]/40 shadow-xs'
+            : 'pt-3'
+        }`}
+      >
         <nav
           className={`max-w-5xl mx-auto rounded-[20px] pointer-events-auto border transition-all duration-300 px-4 sm:px-5 flex items-center justify-between ${
             scrolled
@@ -181,8 +187,8 @@ export default function Layout() {
         </AnimatePresence>
       </header>
 
-      {/* Main Page Content - Offset 96px so content never clips under the floating navbar */}
-      <main className="flex-1 relative z-10 w-full pt-[88px] sm:pt-[96px] flex flex-col">
+      {/* Main Page Content - Offset 96px/112px so content never clips under the floating navbar */}
+      <main className="flex-1 relative z-10 w-full pt-24 sm:pt-28 flex flex-col">
         <Outlet />
       </main>
 

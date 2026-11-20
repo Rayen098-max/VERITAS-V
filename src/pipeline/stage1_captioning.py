@@ -5,6 +5,7 @@ import json
 import subprocess
 import logging
 import argparse
+import cv2
 from datetime import timedelta
 from dotenv import load_dotenv
 
@@ -15,15 +16,28 @@ from src.utils.extract_utils import extract_frame_with_ffmpeg
 load_dotenv()
 
 def get_video_duration(video_path):
-    out = subprocess.check_output([
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "json",
-        video_path
-    ], text=True)
-    return float(json.loads(out)["format"]["duration"])
+    try:
+        out = subprocess.check_output([
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "json",
+            video_path
+        ], text=True)
+        return float(json.loads(out)["format"]["duration"])
+    except Exception as e:
+        logging.warning(f"ffprobe duration probe failed ({e}); attempting OpenCV fallback...")
+        try:
+            cap = cv2.VideoCapture(video_path)
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0
+            cap.release()
+            if frame_count > 0 and fps > 0:
+                return float(frame_count / fps)
+        except Exception:
+            pass
+        return 30.0
 
-def run_captioning_stage(video_path, output_dir="output", num_frames_per_scene=5, threshold=None, backend=None):
+def run_captioning_stage(video_path, output_dir="output", num_frames_per_scene=5, threshold=None, backend=None, disable_audio=None, progress_callback=None):
     os.makedirs(output_dir, exist_ok=True)
     video_name = os.path.splitext(os.path.basename(video_path))[0]
     output_path = os.path.join(output_dir, f"{video_name}_captions.json")
@@ -42,26 +56,28 @@ def run_captioning_stage(video_path, output_dir="output", num_frames_per_scene=5
     try:
         from scenedetect import open_video, SceneManager
         from scenedetect.detectors import ContentDetector
+        if progress_callback:
+            progress_callback("captioning", "processing", 20, "Detecting scene cuts...")
         vid = open_video(video_path)
         sm = SceneManager()
         sm.auto_downscale = True
         sm.add_detector(ContentDetector(threshold=scene_threshold, min_scene_len=45))
-        sm.detect_scenes(vid)
+        sm.detect_scenes(vid, frame_skip=4)
         detected = sm.get_scene_list()
         if detected:
             scenes_def = [
-                {"scene_number": i + 1, "start_time": s.get_seconds(), "end_time": min(e.get_seconds(), total_duration - 0.2)}
-                for i, (s, e) in enumerate(detected[:12])
+                {"scene_number": i + 1, "start_time": s.get_seconds(), "end_time": max(s.get_seconds() + 0.5, min(e.get_seconds(), total_duration - 0.2))}
+                for i, (s, e) in enumerate(detected[:6])
             ]
     except Exception as e:
         logging.warning(f"Scene detection fallback: {e}")
 
-    if not scenes_def:
-        num_chunks = 4 if total_duration >= 20 else max(1, int(total_duration // 5))
+    if not scenes_def or (len(scenes_def) <= 1 and total_duration >= 10):
+        num_chunks = 4 if total_duration >= 20 else max(2, int(total_duration // 5))
         chunk_len = total_duration / num_chunks
         scenes_def = [
             {"scene_number": i + 1, "start_time": round(i * chunk_len, 2), "end_time": round(min((i + 1) * chunk_len, total_duration - 0.1), 2)}
-            for i in range(num_chunks)
+            for i in range(min(num_chunks, 6))
         ]
 
     active_backend = backend or os.getenv("CAPTIONING_BACKEND", "groq")
@@ -76,7 +92,8 @@ def run_captioning_stage(video_path, output_dir="output", num_frames_per_scene=5
 
     transcript_segments = []
     transcript_cache = os.path.join("tmp", f"{video_name}_transcript.json")
-    disable_audio = os.getenv("DISABLE_AUDIO", "false").lower() in ("true", "1", "yes")
+    if disable_audio is None:
+        disable_audio = os.getenv("DISABLE_AUDIO", "false").lower() in ("true", "1", "yes")
 
     if os.path.exists(transcript_cache):
         try:
@@ -142,11 +159,21 @@ def run_captioning_stage(video_path, output_dir="output", num_frames_per_scene=5
         except Exception as e:
             logging.warning(f"Diarization skipped: {e}")
 
-    for sc in scenes_def:
+    cap = None
+    try:
+        cap = cv2.VideoCapture(video_path)
+    except Exception as cap_e:
+        logging.warning(f"Failed to initialize cv2.VideoCapture: {cap_e}")
+
+    total_scenes = len(scenes_def)
+    for i, sc in enumerate(scenes_def):
         num = sc["scene_number"]
         scene_id = f"scene_{num:03d}"
         start_sec = sc["start_time"]
         end_sec = sc["end_time"]
+
+        if progress_callback:
+            progress_callback("captioning", "processing", 35, f"Extracting keyframes (Scene {i+1}/{total_scenes})...")
 
         centroid_sec = round((start_sec + end_sec) / 2.0, 2)
         times = {"start": start_sec, "centroid": centroid_sec, "end": end_sec}
@@ -162,7 +189,19 @@ def run_captioning_stage(video_path, output_dir="output", num_frames_per_scene=5
             filepath = os.path.join(frames_dir, filename)
             pub_path = os.path.join(public_frames_dir, filename)
             if not os.path.exists(filepath):
-                extract_frame_with_ffmpeg(video_path, t_clamped, filepath)
+                extracted = False
+                if cap is not None and cap.isOpened():
+                    try:
+                        cap.set(cv2.CAP_PROP_POS_MSEC, t_clamped * 1000)
+                        ret, frame = cap.read()
+                        if ret and frame is not None and frame.size > 0:
+                            cv2.imwrite(filepath, frame)
+                            extracted = True
+                    except Exception as frame_err:
+                        logging.warning(f"OpenCV frame read failed at {t_clamped}s: {frame_err}")
+                if not extracted or not os.path.exists(filepath):
+                    extract_frame_with_ffmpeg(video_path, t_clamped, filepath)
+
             if os.path.exists(filepath) and not os.path.exists(pub_path):
                 import shutil
                 shutil.copyfile(filepath, pub_path)
@@ -185,8 +224,12 @@ def run_captioning_stage(video_path, output_dir="output", num_frames_per_scene=5
             if seg.get("end", 0) >= start_sec and seg.get("start", 0) <= end_sec
         ).strip()
 
+        if progress_callback:
+            progress_pct = 50 + int((i / max(1, total_scenes)) * 45)
+            progress_callback("captioning", "processing", progress_pct, f"Generating captions (Scene {i+1}/{total_scenes})...")
+
         logging.info(f"Extracting captions for {scene_id} ({start_sec:.1f}s - {end_sec:.1f}s, centroid: {centroid_sec:.1f}s)...")
-        result = backend_fn(frame_paths, scene_text)
+        result = backend_fn(frame_paths, scene_text, scene_id=scene_id)
         time.sleep(0.5)
         
         captions[scene_id] = {
@@ -202,6 +245,9 @@ def run_captioning_stage(video_path, output_dir="output", num_frames_per_scene=5
 
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(captions, f, indent=2)
+
+    if cap is not None and cap.isOpened():
+        cap.release()
 
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(captions, f, indent=2)
@@ -223,7 +269,8 @@ if __name__ == "__main__":
     parser.add_argument("--num-frames", required=False, type=int, default=5, help="Number of intermediate frames per scene")
     parser.add_argument("--threshold", required=False, type=float, default=None, help="Scene detection threshold (default from env or 30.0)")
     parser.add_argument("--backend", required=False, help="Captioning backend (groq, mock, gpt4o, qwen25vl)")
+    parser.add_argument("--disable-audio", action="store_true", help="Disable audio transcription and diarization")
     args, _ = parser.parse_known_args()
 
     setup_logger(args.input, output_dir=args.log)
-    run_captioning_stage(args.input, args.output, args.num_frames, threshold=args.threshold, backend=args.backend)
+    run_captioning_stage(args.input, args.output, args.num_frames, threshold=args.threshold, backend=args.backend, disable_audio=args.disable_audio)
