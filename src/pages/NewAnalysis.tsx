@@ -47,7 +47,7 @@ export default function NewAnalysis() {
   } | null>(null);
 
   // Configuration Panel State
-  const [backend, setBackend] = useState<'mock' | 'qwen25vl' | 'gpt4o'>('qwen25vl');
+  const [backend, setBackend] = useState<'gemini' | 'groq' | 'gpt4o' | 'mock'>('gemini');
   const [sceneThreshold, setSceneThreshold] = useState<number>(40);
   const [framesPerScene, setFramesPerScene] = useState<number>(4);
   const [whisperEnabled, setWhisperEnabled] = useState<boolean>(true);
@@ -315,13 +315,25 @@ export default function NewAnalysis() {
           );
         }
 
-        const allFinished = stages.every((s) => s.status === 'completed' || s.status === 'error');
-        if (allFinished && stages.length > 0) {
+        const failedStage = stages.find((s) => s.status === 'error');
+        if (failedStage) {
+          clearInterval(timer);
+          setIsAnalyzing(false);
+          setActiveLogs((prev) => [
+            ...prev,
+            `[FATAL ERROR] Stage '${failedStage.name}' failed: ${failedStage.errorMsg || 'Pipeline execution failed'}`,
+          ]);
+          setErrorMessage(`Pipeline halted at '${failedStage.name}': ${failedStage.errorMsg || 'Check API keys or cloud logs'}`);
+          return;
+        }
+
+        const allFinished = stages.length > 0 && stages.every((s) => s.status === 'completed');
+        if (allFinished) {
           clearInterval(timer);
           setIsCompleted(true);
           setActiveLogs((prev) => [
             ...prev,
-            '[SUCCESS] Stage 4: Hallucination Verification complete. 3 supported claims, 1 hallucination purged.',
+            '[SUCCESS] Stage 4: Hallucination Verification complete.',
             '[SUCCESS] Stage 5: Dual-format Markdown and JSON forensic reports generated.',
             '[SYSTEM] Ready for interactive visual inspection.',
           ]);
@@ -570,26 +582,26 @@ export default function NewAnalysis() {
                   <button
                     type="button"
                     disabled={isAnalyzing}
-                    onClick={() => setBackend('qwen25vl')}
+                    onClick={() => setBackend('gemini')}
                     className={`py-1.5 px-2 rounded-[8px] font-medium transition-all cursor-pointer ${
-                      backend === 'qwen25vl'
+                      backend === 'gemini'
                         ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-xs font-bold'
                         : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                     }`}
                   >
-                    Qwen2.5-VL
+                    Gemini Flash
                   </button>
                   <button
                     type="button"
                     disabled={isAnalyzing}
-                    onClick={() => setBackend('gpt4o')}
+                    onClick={() => setBackend('groq')}
                     className={`py-1.5 px-2 rounded-[8px] font-medium transition-all cursor-pointer ${
-                      backend === 'gpt4o'
+                      backend === 'groq'
                         ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-xs font-bold'
                         : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                     }`}
                   >
-                    GPT-4o Vision
+                    Groq Vision
                   </button>
                   <button
                     type="button"
@@ -601,15 +613,15 @@ export default function NewAnalysis() {
                         : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                     }`}
                   >
-                    Mock Heuristic
+                    Mock Demo
                   </button>
                 </div>
                 <p className="text-[11px] text-[var(--text-muted)]">
-                  {backend === 'qwen25vl'
-                    ? 'Recommended: Local/Groq Vision accelerated inference with zero key-leakage.'
-                    : backend === 'gpt4o'
-                    ? 'Cloud high-precision vision agent via OpenAI batch / vision completions.'
-                    : 'Fast offline synthetic benchmark generator for unit verification.'}
+                  {backend === 'gemini'
+                    ? 'Recommended: Google Gemini multimodal vision (100% free API tier).'
+                    : backend === 'groq'
+                    ? 'Ultra-fast Groq Cloud vision failover with multi-key rate limit recovery.'
+                    : 'Instant offline synthetic verification for testing without API usage.'}
                 </p>
               </div>
 

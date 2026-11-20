@@ -21,4 +21,4 @@ services:
       - key: LLM_MODEL
         value: llama-3.3-70b-versatile
       - key: GEMINI_VISION_MODEL
-        value: gemini-2.0-flash
+        value: gemini-3-flash-preview

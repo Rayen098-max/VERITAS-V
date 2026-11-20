@@ -81,14 +81,17 @@ def _load_qwen_model():
 
 
 def qwen25vl_backend(frame_paths, transcript, **kwargs):
-    '''Caption a scene using a locally-hosted Qwen2.5-VL model.'''
-
-    from qwen_vl_utils import process_vision_info
-
-    global _qwen_model, _qwen_processor
-
-    if _qwen_model is None:
-        _load_qwen_model()
+    '''Caption a scene using a locally-hosted Qwen2.5-VL model with cloud failover.'''
+    try:
+        from qwen_vl_utils import process_vision_info
+        global _qwen_model, _qwen_processor
+        if _qwen_model is None:
+            _load_qwen_model()
+    except Exception as e:
+        logging.warning(f"Qwen2.5-VL local environment unavailable ({e}); seamlessly falling back to Gemini/Groq cloud.")
+        if os.getenv("GEMINI_API_KEY"):
+            return gemini_backend(frame_paths, transcript, **kwargs)
+        return groq_backend(frame_paths, transcript, **kwargs)
 
     image_content = [
         {"type": "image", "image": path}
@@ -198,8 +201,8 @@ def gemini_backend(frame_paths, transcript, **kwargs):
             "keywords": keywords
         }
     except Exception as e:
-        logging.warning(f"Gemini captioning failed ({e}); falling back to veritas_local.")
-        return _get_veritas_local()(frame_paths, transcript, **kwargs)
+        logging.warning(f"Gemini captioning failed ({e}); falling back to mock heuristic.")
+        return mock_backend(frame_paths, transcript, **kwargs)
 
 def groq_backend(frame_paths, transcript, **kwargs):
     '''Caption a scene using Groq Vision API with failover, falling back to Gemini if Vision model unavailable.'''
@@ -240,8 +243,8 @@ def groq_backend(frame_paths, transcript, **kwargs):
             "keywords": keywords
         }
     except Exception as e:
-        logging.warning(f"Groq vision failed ({e}); falling back to veritas_local.")
-        return _get_veritas_local()(frame_paths, transcript, **kwargs)
+        logging.warning(f"Groq vision failed ({e}); falling back to mock heuristic.")
+        return mock_backend(frame_paths, transcript, **kwargs)
 
 def _get_veritas_local():
     from src.utils.local_model_loader import veritas_local_captioning

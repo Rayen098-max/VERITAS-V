@@ -187,7 +187,9 @@ def run_pipeline_worker(analysis_id: str, video_path: str, config: Dict[str, Any
     video_name = os.path.splitext(os.path.basename(video_path))[0]
     captions_file = os.path.join("output", f"{video_name}_captions.json")
 
-    backend_name = config.get("backend") or os.getenv("CAPTIONING_BACKEND", "groq")
+    backend_name = config.get("backend") or os.getenv("CAPTIONING_BACKEND", "gemini")
+    if backend_name in ("qwen25vl", "veritas_local"):
+        backend_name = "gemini" if os.getenv("GEMINI_API_KEY") else "groq"
     threshold = float(config.get("sceneThreshold", 30.0))
     frames_per_scene = int(config.get("framesPerScene", 4))
 
