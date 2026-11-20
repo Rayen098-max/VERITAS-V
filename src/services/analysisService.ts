@@ -185,9 +185,11 @@ export const analysisService = {
         } else {
           const errDetail = await response.text();
           console.error(`Backend returned status ${response.status}: ${errDetail}`);
+          throw new Error(`Server returned status ${response.status}: ${errDetail}`);
         }
       } catch (err) {
-        console.warn('Backend startAnalysis failed; using local queue.', err);
+        console.error('Backend startAnalysis error:', err);
+        throw err;
       }
     }
 
@@ -268,6 +270,7 @@ export const analysisService = {
     }
 
     // 3. Fallback to local simulated progress
+    await this.updateActivePipelines();
     const activePipelines = getActivePipelines();
     const pipeline = activePipelines.find(p => p.analysisId === id);
 

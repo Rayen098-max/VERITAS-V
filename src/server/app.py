@@ -262,6 +262,7 @@ def health_check():
 
 @app.post("/api/analysis/upload")
 async def upload_video(video: UploadFile = File(...)):
+    os.makedirs("media", exist_ok=True)
     filename = video.filename or "uploaded_video.mp4"
     safe_stem = Path(filename).stem.replace(" ", "_")
     target_path = os.path.join("media", f"{safe_stem}.mp4")
@@ -312,26 +313,60 @@ class StartAnalysisRequest(BaseModel):
 async def start_analysis(analysis_id: str, req: StartAnalysisRequest, background_tasks: BackgroundTasks):
     job = ACTIVE_JOBS.get(analysis_id)
     clean_id = analysis_id.replace("analysis_", "")
+    os.makedirs("media", exist_ok=True)
+    os.makedirs("output", exist_ok=True)
+    os.makedirs("frames", exist_ok=True)
     target_media = os.path.join("media", f"{clean_id}.mp4")
 
     # If video_url was provided (e.g. from Supabase Storage), download it!
     if req.video_url and not os.path.exists(target_media):
         logging.info(f"[{analysis_id}] Fetching video from remote URL: {req.video_url}")
         try:
-            urllib.request.urlretrieve(req.video_url, target_media)
+            dl_headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            supa_key = os.getenv("SUPABASE_KEY")
+            if supa_key and "supabase.co" in req.video_url:
+                dl_headers["apikey"] = supa_key
+                dl_headers["Authorization"] = f"Bearer {supa_key}"
+
+            with requests.get(req.video_url, headers=dl_headers, stream=True, timeout=120) as r:
+                r.raise_for_status()
+                with open(target_media, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=1024 * 1024):
+                        if chunk:
+                            f.write(chunk)
             logging.info(f"[{analysis_id}] Video downloaded successfully ({os.path.getsize(target_media)} bytes)")
         except Exception as dl_err:
             logging.error(f"Failed to download video from {req.video_url}: {dl_err}")
-            raise HTTPException(status_code=400, detail=f"Failed to fetch video from remote URL: {dl_err}")
+            # If target_media doesn't exist, check if there's any file in media/ matching clean_stem
+            clean_stem = clean_id.split("_")[0]
+            existing = [os.path.join("media", f) for f in os.listdir("media") if clean_stem.lower() in f.lower() and f.endswith((".mp4", ".mov", ".avi", ".webm"))] if os.path.exists("media") else []
+            if existing:
+                target_media = existing[0]
+                logging.info(f"Falling back to existing local media file: {target_media}")
+            else:
+                raise HTTPException(status_code=400, detail=f"Failed to fetch video from remote URL: {dl_err}")
 
     if not job:
+        found_media = None
         if os.path.exists(target_media):
-            dur = probe_video_duration(target_media)
-            sz = f"{(os.path.getsize(target_media) / (1024 * 1024)):.1f} MB"
+            found_media = target_media
+        elif os.path.exists("media") and os.listdir("media"):
+            clean_stem = clean_id.split("_")[0]
+            candidates = [os.path.join("media", f) for f in os.listdir("media") if f.endswith((".mp4", ".mov", ".avi", ".webm")) and clean_stem.lower() in f.lower()]
+            if candidates:
+                found_media = candidates[0]
+            else:
+                found_media = os.path.join("media", os.listdir("media")[-1])
+
+        if found_media and os.path.exists(found_media):
+            dur = probe_video_duration(found_media)
+            sz = f"{(os.path.getsize(found_media) / (1024 * 1024)):.1f} MB"
             job = {
                 "id": analysis_id,
-                "video_name": req.video_name or f"{clean_id}.mp4",
-                "video_path": target_media,
+                "video_name": req.video_name or os.path.basename(found_media),
+                "video_path": found_media,
                 "file_size": sz,
                 "duration": dur,
                 "status": "pending",

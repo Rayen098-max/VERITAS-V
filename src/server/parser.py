@@ -27,25 +27,48 @@ def build_video_analysis(video_id: str, video_name: str, output_dir: str = "outp
     Assembles a full VideoAnalysis object from the output artifacts on disk.
     """
     clean_name = video_name.removesuffix(".mp4").removesuffix(".mov").removesuffix(".avi").removesuffix(".webm")
+    clean_id = video_id.replace("analysis_", "")
     
-    # Auto-resolve output_dir regardless of current working directory
+    candidate_prefixes = [
+        clean_name,
+        clean_id,
+        clean_name.replace(" ", "_"),
+        clean_id.replace(" ", "_"),
+    ]
+
+    # Auto-resolve output_dir and matching prefix
+    resolved_prefix = clean_name
     for candidate_dir in [output_dir, os.path.join("VERITAS-V", output_dir), os.path.join("..", output_dir)]:
-        test_file = os.path.join(candidate_dir, f"{clean_name}_captions.json")
-        if os.path.exists(test_file):
-            output_dir = candidate_dir
-            break
+        if os.path.exists(candidate_dir):
+            found = False
+            for pfx in candidate_prefixes:
+                if os.path.exists(os.path.join(candidate_dir, f"{pfx}_captions.json")):
+                    output_dir = candidate_dir
+                    resolved_prefix = pfx
+                    found = True
+                    break
+            if not found:
+                stem_part = clean_name.replace(" ", "_").split("_")[0]
+                matches = glob.glob(os.path.join(candidate_dir, f"*{stem_part}*_captions.json"))
+                if matches:
+                    output_dir = candidate_dir
+                    resolved_prefix = os.path.basename(matches[0]).replace("_captions.json", "")
+                    found = True
+                    break
+            if found:
+                break
 
     for candidate_media in [media_dir, os.path.join("VERITAS-V", media_dir), os.path.join("..", media_dir)]:
         if os.path.exists(candidate_media):
             media_dir = candidate_media
             break
 
-    captions_path = os.path.join(output_dir, f"{clean_name}_captions.json")
-    narrative_path = os.path.join(output_dir, f"{clean_name}_narrative.txt")
-    causal_path = os.path.join(output_dir, f"{clean_name}_causal.json")
-    verification_path = os.path.join(output_dir, f"{clean_name}_verification.json")
-    explained_path = os.path.join(output_dir, f"{clean_name}_explained.json")
-    speakers_path = os.path.join(output_dir, f"{clean_name}_speakers.json")
+    captions_path = os.path.join(output_dir, f"{resolved_prefix}_captions.json")
+    narrative_path = os.path.join(output_dir, f"{resolved_prefix}_narrative.txt")
+    causal_path = os.path.join(output_dir, f"{resolved_prefix}_causal.json")
+    verification_path = os.path.join(output_dir, f"{resolved_prefix}_verification.json")
+    explained_path = os.path.join(output_dir, f"{resolved_prefix}_explained.json")
+    speakers_path = os.path.join(output_dir, f"{resolved_prefix}_speakers.json")
 
     scenes_raw = {}
     if os.path.exists(captions_path):

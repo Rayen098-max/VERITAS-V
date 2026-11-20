@@ -280,6 +280,17 @@ export default function NewAnalysis() {
         const stages = await analysisService.getPipelineProgress(id);
         setPipelineStages(stages);
 
+        // Dynamically log stage progression into terminal console
+        stages.forEach((s) => {
+          if (s.status === 'completed') {
+            const compMsg = `[DONE] ${s.name} completed successfully.`;
+            setActiveLogs((prev) => prev.includes(compMsg) ? prev : [...prev, compMsg]);
+          } else if (s.status === 'processing') {
+            const procMsg = `[STAGE] Processing ${s.name} (${s.progress}%)...`;
+            setActiveLogs((prev) => prev.includes(procMsg) ? prev : [...prev, procMsg]);
+          }
+        });
+
         // Dynamically simulate streaming scene frames
         const currentStage = stages.find(s => s.status === 'processing');
         const isNewVideo = uploadedDetails?.name?.toLowerCase().includes('newvideo');

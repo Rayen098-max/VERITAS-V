@@ -44,6 +44,7 @@ def run_captioning_stage(video_path, output_dir="output", num_frames_per_scene=5
         from scenedetect.detectors import ContentDetector
         vid = open_video(video_path)
         sm = SceneManager()
+        sm.auto_downscale = True
         sm.add_detector(ContentDetector(threshold=scene_threshold, min_scene_len=45))
         sm.detect_scenes(vid)
         detected = sm.get_scene_list()
