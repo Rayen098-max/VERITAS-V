@@ -1,6 +1,11 @@
 import type { VideoAnalysis, PipelineStage } from '../types';
 import { MOCK_ANALYSES, PIPELINE_STAGES } from './mockData';
 import { USE_MOCK_DATA, API_BASE_URL, REQUEST_LATENCY_MS } from './api';
+import { 
+  supabase, 
+  fetchAnalysesFromSupabase, 
+  fetchAnalysisByIdFromSupabase 
+} from './supabase';
 
 // Helper to delay execution (simulate network delay)
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -52,12 +57,26 @@ const saveActivePipelines = (pipelines: ActivePipelineProgress[]) => {
 };
 
 export const analysisService = {
-  // Get all analyses in history
+  // Get all analyses in history (combines Supabase Cloud DB, live backend, and local fallback)
   async getHistory(): Promise<VideoAnalysis[]> {
+    // 1. Try Supabase Cloud Database first
+    try {
+      const cloudAnalyses = await fetchAnalysesFromSupabase();
+      if (cloudAnalyses.length > 0) {
+        return cloudAnalyses;
+      }
+    } catch (e) {
+      console.warn('Supabase getHistory fallback:', e);
+    }
+
+    // 2. Try live FastAPI backend
     if (!USE_MOCK_DATA) {
       try {
         const response = await fetch(`${API_BASE_URL}/analysis/history`);
-        if (response.ok) return await response.json();
+        if (response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data) && data.length > 0) return data;
+        }
       } catch (err) {
         console.warn('Backend server unreachable; falling back to offline storage mode.', err);
       }
@@ -70,12 +89,21 @@ export const analysisService = {
 
   // Get specific analysis details
   async getAnalysisDetails(id: string): Promise<VideoAnalysis> {
+    // 1. Try Supabase Cloud Database first
+    try {
+      const cloudRecord = await fetchAnalysisByIdFromSupabase(id);
+      if (cloudRecord) return cloudRecord;
+    } catch (e) {
+      console.warn('Supabase getAnalysisDetails fallback:', e);
+    }
+
+    // 2. Try live FastAPI backend
     if (!USE_MOCK_DATA) {
       try {
         const response = await fetch(`${API_BASE_URL}/analysis/${id}`);
         if (response.ok) return await response.json();
       } catch (err) {
-        console.warn(`Backend server unreachable for ${id}; falling back to offline storage.`, err);
+        console.warn(`Backend server unreachable for ${id}; checking local storage.`, err);
       }
     }
 
@@ -87,7 +115,7 @@ export const analysisService = {
     return analysis;
   },
 
-  // Upload video
+  // Upload video via backend (optional fallback when not uploading directly to Supabase)
   async uploadVideo(file: File): Promise<{ id: string; name: string; size: string; duration: number }> {
     if (!USE_MOCK_DATA) {
       try {
@@ -121,27 +149,55 @@ export const analysisService = {
     videoName: string,
     fileSize: string,
     duration: number,
-    config: Record<string, boolean>
+    config: Record<string, any>,
+    videoUrl?: string
   ): Promise<void> {
+    // 1. Dispatch to live FastAPI backend with remote video URL
     if (!USE_MOCK_DATA) {
       try {
+        const payload = {
+          ...config,
+          video_url: videoUrl || null,
+          video_name: videoName,
+        };
         const response = await fetch(`${API_BASE_URL}/analysis/${id}/start`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(config)
+          body: JSON.stringify(payload)
         });
-        if (response.ok) return;
+
+        if (response.ok) {
+          // Mirror active state into Supabase
+          try {
+            await supabase.from('analyses').upsert({
+              id,
+              video_name: videoName,
+              video_url: videoUrl || null,
+              file_size: fileSize,
+              duration,
+              status: 'processing',
+              stages: PIPELINE_STAGES.map(s => ({ ...s, status: 'pending', progress: 0 })),
+            });
+          } catch (supaErr) {
+            console.warn('Could not mirror analysis to Supabase:', supaErr);
+          }
+          return;
+        } else {
+          const errDetail = await response.text();
+          console.error(`Backend returned status ${response.status}: ${errDetail}`);
+        }
       } catch (err) {
-        console.warn('Backend startAnalysis failed; falling back to mock pipeline.', err);
+        console.warn('Backend startAnalysis failed; using local queue.', err);
       }
     }
 
     await delay(REQUEST_LATENCY_MS);
 
-    // Create a temporary "processing" analysis record
+    // Create a local active pipeline record for offline/demo simulation
     const newAnalysis: VideoAnalysis = {
       id,
       videoName,
+      videoUrl,
       fileSize,
       duration,
       dateAnalyzed: new Date().toISOString().replace('T', ' ').substring(0, 16),
@@ -161,9 +217,7 @@ export const analysisService = {
     const analyses = getStoredAnalyses();
     saveAnalyses([newAnalysis, ...analyses]);
 
-    // Initialize stages list for this pipeline
     const stages: PipelineStage[] = PIPELINE_STAGES.map(stage => {
-      // Skip speaker diarization if not enabled in config
       if (stage.id === 'diarization' && !config.diarization) {
         return {
           ...stage,
@@ -190,6 +244,7 @@ export const analysisService = {
 
   // Get active pipeline progress
   async getPipelineProgress(id: string): Promise<PipelineStage[]> {
+    // 1. Check live backend status
     if (!USE_MOCK_DATA) {
       try {
         const response = await fetch(`${API_BASE_URL}/analysis/${id}/status`);
@@ -198,171 +253,125 @@ export const analysisService = {
           return data.stages;
         }
       } catch (err) {
-        console.warn('Backend status poll failed; falling back to offline simulation.', err);
+        console.warn('Polling status from backend failed; checking Supabase fallback.', err);
       }
     }
 
-    await delay(200);
-    await this.updateActivePipelines();
+    // 2. Check Supabase database status
+    try {
+      const cloudRecord = await fetchAnalysisByIdFromSupabase(id);
+      if (cloudRecord && cloudRecord.status === 'completed' && cloudRecord.scenes.length > 0) {
+        return PIPELINE_STAGES.map(s => ({ ...s, status: 'completed', progress: 100 }));
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // 3. Fallback to local simulated progress
     const activePipelines = getActivePipelines();
     const pipeline = activePipelines.find(p => p.analysisId === id);
+
     if (!pipeline) {
-      return PIPELINE_STAGES.map(s => ({
-        ...s,
-        status: 'completed' as const,
-        progress: 100
-      }));
+      const analyses = getStoredAnalyses();
+      const analysis = analyses.find(a => a.id === id);
+      if (analysis && analysis.status === 'completed') {
+        return PIPELINE_STAGES.map(stage => ({
+          ...stage,
+          status: 'completed',
+          progress: 100
+        }));
+      }
+      return PIPELINE_STAGES;
     }
+
     return pipeline.stages;
+  },
+
+  // Background progress simulation for offline fallback
+  async updateActivePipelines(): Promise<void> {
+    const activePipelines = getActivePipelines();
+    if (activePipelines.length === 0) return;
+
+    const now = Date.now();
+    const remainingPipelines: ActivePipelineProgress[] = [];
+    const analyses = getStoredAnalyses();
+
+    for (const pipeline of activePipelines) {
+      const elapsedSeconds = (now - pipeline.startTime) / 1000;
+      let allDone = true;
+
+      const updatedStages = pipeline.stages.map((stage, idx) => {
+        const stageStart = idx * 2.5;
+        const stageDuration = 2.5;
+
+        if (stage.status === 'completed' && stage.progress === 100) return stage;
+
+        if (elapsedSeconds < stageStart) {
+          allDone = false;
+          return { ...stage, status: 'pending' as const, progress: 0 };
+        } else if (elapsedSeconds < stageStart + stageDuration) {
+          allDone = false;
+          const stageElapsed = elapsedSeconds - stageStart;
+          const progress = Math.min(99, Math.floor((stageElapsed / stageDuration) * 100));
+          return { ...stage, status: 'processing' as const, progress };
+        } else {
+          return { ...stage, status: 'completed' as const, progress: 100 };
+        }
+      });
+
+      pipeline.stages = updatedStages;
+
+      if (allDone) {
+        const targetIndex = analyses.findIndex(a => a.id === pipeline.analysisId);
+        if (targetIndex !== -1) {
+          const sample = MOCK_ANALYSES[0];
+          analyses[targetIndex] = {
+            ...analyses[targetIndex],
+            status: 'completed',
+            trustScore: sample.trustScore,
+            scenesCount: sample.scenesCount,
+            statementsCount: sample.statementsCount,
+            verifiedCount: sample.verifiedCount,
+            hallucinationsCount: sample.hallucinationsCount,
+            scenes: sample.scenes,
+            causalRelations: sample.causalRelations,
+            verifications: sample.verifications,
+            explainability: sample.explainability,
+            speakers: sample.speakers
+          };
+        }
+      } else {
+        remainingPipelines.push(pipeline);
+      }
+    }
+
+    saveAnalyses(analyses);
+    saveActivePipelines(remainingPipelines);
   },
 
   // Delete analysis
   async deleteAnalysis(id: string): Promise<void> {
+    // 1. Delete from Supabase
+    try {
+      await supabase.from('analyses').delete().eq('id', id);
+    } catch (e) {
+      console.warn('Supabase delete warning:', e);
+    }
+
+    // 2. Delete from live backend
     if (!USE_MOCK_DATA) {
       try {
-        const response = await fetch(`${API_BASE_URL}/analysis/${id}`, {
-          method: 'DELETE'
-        });
-        if (response.ok) return;
+        await fetch(`${API_BASE_URL}/analysis/${id}`, { method: 'DELETE' });
       } catch (err) {
-        console.warn('Backend delete failed; cleaning up local store.', err);
+        console.warn('Backend deleteAnalysis failed:', err);
       }
     }
 
-    await delay(REQUEST_LATENCY_MS);
+    // 3. Delete from localStorage
     const analyses = getStoredAnalyses().filter(a => a.id !== id);
     saveAnalyses(analyses);
 
     const activePipelines = getActivePipelines().filter(p => p.analysisId !== id);
     saveActivePipelines(activePipelines);
-  },
-
-  // Internal helper to update simulation status based on elapsed time
-  async updateActivePipelines(): Promise<void> {
-    const activePipelines = getActivePipelines();
-    if (activePipelines.length === 0) return;
-
-    const currentTimestamp = Date.now();
-    const analyses = getStoredAnalyses();
-    const updatedPipelines: ActivePipelineProgress[] = [];
-
-    const STAGE_DURATION_MS = 2500; // Each stage takes 2.5 seconds to process in demo mode
-
-    for (const pipeline of activePipelines) {
-      const elapsed = currentTimestamp - pipeline.startTime;
-      let allDone = true;
-
-      // Filter active (enabled) stages
-      const activeStages = pipeline.stages.filter(s => {
-        if (s.id === 'diarization') return !!pipeline.config.diarization;
-        return true;
-      });
-
-      const updatedStages = pipeline.stages.map(stage => {
-        // Handle skipped diarization
-        if (stage.id === 'diarization' && !pipeline.config.diarization) {
-          return stage;
-        }
-
-        // Find index of this stage in the sequence
-        const stageIndex = activeStages.findIndex(s => s.id === stage.id);
-        const stageStartTime = stageIndex * STAGE_DURATION_MS;
-        const stageEndTime = stageStartTime + STAGE_DURATION_MS;
-
-        if (elapsed >= stageEndTime) {
-          return { ...stage, status: 'completed' as const, progress: 100 };
-        } else if (elapsed >= stageStartTime) {
-          allDone = false;
-          const stageElapsed = elapsed - stageStartTime;
-          const pct = Math.min(Math.floor((stageElapsed / STAGE_DURATION_MS) * 100), 99);
-          return { ...stage, status: 'processing' as const, progress: pct };
-        } else {
-          allDone = false;
-          return { ...stage, status: 'pending' as const, progress: 0 };
-        }
-      });
-
-      if (allDone) {
-        // Complete the analysis and populate the results!
-        const analysisIndex = analyses.findIndex(a => a.id === pipeline.analysisId);
-        if (analysisIndex !== -1) {
-          const currentAnalysis = analyses[analysisIndex];
-          const matchedMock = MOCK_ANALYSES.find(m => m.videoName.toLowerCase() === currentAnalysis.videoName.toLowerCase());
-          if (matchedMock) {
-            analyses[analysisIndex] = {
-              ...matchedMock,
-              id: pipeline.analysisId,
-              status: 'completed',
-              dateAnalyzed: new Date().toISOString().replace('T', ' ').substring(0, 16),
-            };
-          } else {
-            const template = pipeline.config.diarization ? MOCK_ANALYSES[0] : MOCK_ANALYSES[1];
-            const newDur = currentAnalysis.duration;
-            const numScenes = template.scenes.length;
-            const durationPerScene = newDur / numScenes;
-
-            const updatedScenes = template.scenes.map((s, idx) => ({
-              ...s,
-              startTime: Number((idx * durationPerScene).toFixed(1)),
-              endTime: Number(((idx + 1) * durationPerScene).toFixed(1))
-            }));
-
-          const updatedCausal = template.causalRelations.map((cr, idx) => ({
-            ...cr,
-            startTime: Number((idx * durationPerScene).toFixed(1)),
-            endTime: Number(((idx + 1) * durationPerScene).toFixed(1))
-          }));
-
-          const updatedVerif = template.verifications.map((v, idx) => ({
-            ...v,
-            timestamps: {
-              start: Number((idx * durationPerScene).toFixed(1)),
-              end: Number(((idx + 1) * durationPerScene).toFixed(1))
-            }
-          }));
-
-          const updatedExplain = template.explainability.map((e, idx) => ({
-            ...e,
-            timestamps: {
-              start: Number((idx * durationPerScene).toFixed(1)),
-              end: Number(((idx + 1) * durationPerScene).toFixed(1))
-            }
-          }));
-
-          // Speakers segment scaling
-          const updatedSpeakers = template.speakers.map(s => {
-            const scale = newDur / template.duration;
-            return {
-              ...s,
-              startTime: Number((s.startTime * scale).toFixed(1)),
-              endTime: Number((s.endTime * scale).toFixed(1))
-            };
-          });
-
-          analyses[analysisIndex] = {
-            ...analyses[analysisIndex],
-            status: 'completed',
-            trustScore: template.trustScore,
-            scenesCount: template.scenesCount,
-            statementsCount: template.statementsCount,
-            verifiedCount: template.verifiedCount,
-            hallucinationsCount: template.hallucinationsCount,
-            scenes: updatedScenes,
-            causalRelations: updatedCausal,
-            verifications: updatedVerif,
-            explainability: updatedExplain,
-            speakers: pipeline.config.diarization ? updatedSpeakers : [],
-            narrativeText: template.narrativeText
-          };
-        }
-        saveAnalyses(analyses);
-      }
-      } else {
-        pipeline.stages = updatedStages;
-        updatedPipelines.push(pipeline);
-      }
-    }
-
-    saveActivePipelines(updatedPipelines);
   }
 };

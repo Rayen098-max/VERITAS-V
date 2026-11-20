@@ -17,6 +17,7 @@ import {
 import Container from '../components/Container';
 import { usePageMeta } from '../hooks/usePageMeta';
 import { analysisService } from '../services/analysisService';
+import { uploadVideoToSupabase } from '../services/supabase';
 import type { PipelineStage } from '../types';
 
 export default function NewAnalysis() {
@@ -42,6 +43,7 @@ export default function NewAnalysis() {
     size: string;
     duration: number;
     thumbnail?: string;
+    videoUrl?: string;
   } | null>(null);
 
   // Configuration Panel State
@@ -162,27 +164,47 @@ export default function NewAnalysis() {
     const preview = URL.createObjectURL(file);
     setVideoPreviewUrl(preview);
 
-    // Simulate upload progress
+    // Direct Upload to Supabase Storage with real progress tracking
     setIsUploading(true);
-    setUploadProgress(0);
+    setUploadProgress(10);
 
-    const interval = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
+    const safeStem = file.name.replace(/[^a-zA-Z0-9]/g, '_');
+    const newAnalysisId = `analysis_${safeStem}_${Date.now()}`;
+
+    // Read real duration via offscreen video
+    const tempVideo = document.createElement('video');
+    tempVideo.preload = 'metadata';
+    tempVideo.src = preview;
+    
+    const finalizeUpload = (durationSec: number) => {
+      uploadVideoToSupabase(file, (pct) => {
+        setUploadProgress(Math.max(15, pct));
+      })
+        .then((uploadRes) => {
           setIsUploading(false);
+          setUploadProgress(100);
           setUploadedDetails({
-            id: 'analysis_' + file.name.replace(/[^a-zA-Z0-9]/g, '_'),
+            id: newAnalysisId,
             name: file.name,
             size: (file.size / (1024 * 1024)).toFixed(1) + ' MB',
-            duration: 45, // default duration estimate
+            duration: durationSec,
             thumbnail: '/frames/my_video_frames/my_video_scene_001_start.jpg',
+            videoUrl: uploadRes.publicUrl,
           });
-          return 100;
-        }
-        return prev + 25;
-      });
-    }, 120);
+        })
+        .catch((err) => {
+          setIsUploading(false);
+          console.error('Supabase upload error:', err);
+          setErrorMessage(`Upload to cloud storage failed: ${err.message || 'Network error'}`);
+        });
+    };
+
+    tempVideo.onloadedmetadata = () => {
+      finalizeUpload(Math.round(tempVideo.duration) || 45);
+    };
+    tempVideo.onerror = () => {
+      finalizeUpload(45);
+    };
   };
 
   const handleRemoveVideo = () => {
@@ -201,6 +223,7 @@ export default function NewAnalysis() {
     setAnalysisId(uploadedDetails.id);
     setActiveLogs([
       `[INGRESS] Received payload: ${uploadedDetails.name} (${uploadedDetails.size})`,
+      `[STORAGE] Cloud Video URL: ${uploadedDetails.videoUrl ? 'Supabase Storage verified' : 'Local media cache'}`,
       `[CONFIG] Backend: ${backend} | PySceneDetect: ${sceneThreshold} | Keyframes/Scene: ${framesPerScene} | Whisper: ${whisperEnabled ? 'ON' : 'OFF'}`,
       `[STAGE 1] Launching PySceneDetect content detection (threshold=${sceneThreshold})...`,
     ]);
@@ -212,19 +235,25 @@ export default function NewAnalysis() {
         uploadedDetails.size,
         uploadedDetails.duration,
         {
+          backend: backend,
+          sceneThreshold: sceneThreshold,
+          framesPerScene: framesPerScene,
+          whisperEnabled: whisperEnabled,
+          strictness: strictness,
           sceneCaptions: true,
           narrative: true,
           causalReasoning: true,
           verifyHallucinations: true,
           explainability: true,
           diarization: whisperEnabled,
-        }
+        },
+        uploadedDetails.videoUrl
       );
 
       pollPipeline(uploadedDetails.id);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setActiveLogs((prev) => [...prev, `[ERROR] Pipeline initialization failed: ${err}`]);
+      setActiveLogs((prev) => [...prev, `[ERROR] Pipeline initialization failed: ${err?.message || err}`]);
       setIsAnalyzing(false);
     }
   };

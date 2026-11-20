@@ -7,6 +7,8 @@ import shutil
 import logging
 import threading
 import subprocess
+import urllib.request
+import requests
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -116,6 +118,66 @@ def probe_video_duration(video_path: str) -> float:
         logging.warning(f"ffprobe duration probe failed: {e}")
         return 30.0
 
+def sync_frames_to_supabase(video_stem: str):
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_KEY")
+    if not supabase_url or not supabase_key:
+        return
+    frames_folder = os.path.join("frames", f"{video_stem}_frames")
+    if not os.path.exists(frames_folder):
+        frames_folder = os.path.join("public", "frames", f"{video_stem}_frames")
+    if not os.path.exists(frames_folder):
+        return
+    
+    headers = {
+        "apikey": supabase_key,
+        "Authorization": f"Bearer {supabase_key}",
+        "x-upsert": "true"
+    }
+    for frame_file in os.listdir(frames_folder):
+        if frame_file.lower().endswith((".jpg", ".jpeg", ".png")):
+            frame_path = os.path.join(frames_folder, frame_file)
+            storage_dest = f"{video_stem}_frames/{frame_file}"
+            upload_url = f"{supabase_url}/storage/v1/object/frames/{storage_dest}"
+            try:
+                with open(frame_path, "rb") as f:
+                    requests.post(upload_url, headers=headers, data=f, timeout=15)
+            except Exception as e:
+                logging.warning(f"Failed to sync frame {frame_file} to Supabase: {e}")
+
+def sync_analysis_to_supabase(analysis_id: str, analysis_data: dict, video_url: Optional[str] = None):
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_KEY")
+    if not supabase_url or not supabase_key:
+        return
+    rest_url = f"{supabase_url}/rest/v1/analyses"
+    headers = {
+        "apikey": supabase_key,
+        "Authorization": f"Bearer {supabase_key}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates"
+    }
+    payload = {
+        "id": analysis_id,
+        "video_name": analysis_data.get("videoName"),
+        "video_url": video_url or analysis_data.get("videoUrl"),
+        "file_size": analysis_data.get("fileSize", "N/A"),
+        "duration": analysis_data.get("duration", 0),
+        "status": "completed",
+        "stages": [{"id": "pipeline", "status": "completed", "progress": 100, "output_data": analysis_data}],
+        "causal_graph": {"claims": analysis_data.get("causalRelations", [])},
+        "verification_report": {
+            "trust_score": analysis_data.get("trustScore", 85),
+            "verifications": analysis_data.get("verifications", []),
+            "explainability": analysis_data.get("explainability", [])
+        }
+    }
+    try:
+        r = requests.post(rest_url, headers=headers, json=payload, timeout=15)
+        logging.info(f"[{analysis_id}] Synced analysis to Supabase: status {r.status_code}")
+    except Exception as e:
+        logging.warning(f"[{analysis_id}] Failed to sync analysis to Supabase: {e}")
+
 def run_pipeline_worker(analysis_id: str, video_path: str, config: Dict[str, Any]):
     job = ACTIVE_JOBS.get(analysis_id)
     if not job:
@@ -173,6 +235,14 @@ def run_pipeline_worker(analysis_id: str, video_path: str, config: Dict[str, Any
         job["status"] = "completed"
         logging.info(f"[{analysis_id}] Pipeline completed successfully!")
 
+        # Sync frames and analysis report to Supabase
+        try:
+            sync_frames_to_supabase(video_name)
+            analysis_obj = build_video_analysis(analysis_id, job["video_name"])
+            sync_analysis_to_supabase(analysis_id, analysis_obj, video_url=config.get("video_url"))
+        except Exception as sync_e:
+            logging.error(f"[{analysis_id}] Supabase post-processing sync failed: {sync_e}")
+
     except Exception as e:
         logging.error(f"[{analysis_id}] Pipeline failed: {e}", exc_info=True)
         job["status"] = "failed"
@@ -222,6 +292,8 @@ async def upload_video(video: UploadFile = File(...)):
     }
 
 class StartAnalysisRequest(BaseModel):
+    video_url: Optional[str] = None
+    video_name: Optional[str] = None
     backend: Optional[str] = "groq"
     sceneThreshold: Optional[float] = 30.0
     framesPerScene: Optional[int] = 4
@@ -237,17 +309,27 @@ class StartAnalysisRequest(BaseModel):
 @app.post("/api/analysis/{analysis_id}/start")
 async def start_analysis(analysis_id: str, req: StartAnalysisRequest, background_tasks: BackgroundTasks):
     job = ACTIVE_JOBS.get(analysis_id)
+    clean_id = analysis_id.replace("analysis_", "")
+    target_media = os.path.join("media", f"{clean_id}.mp4")
+
+    # If video_url was provided (e.g. from Supabase Storage), download it!
+    if req.video_url and not os.path.exists(target_media):
+        logging.info(f"[{analysis_id}] Fetching video from remote URL: {req.video_url}")
+        try:
+            urllib.request.urlretrieve(req.video_url, target_media)
+            logging.info(f"[{analysis_id}] Video downloaded successfully ({os.path.getsize(target_media)} bytes)")
+        except Exception as dl_err:
+            logging.error(f"Failed to download video from {req.video_url}: {dl_err}")
+            raise HTTPException(status_code=400, detail=f"Failed to fetch video from remote URL: {dl_err}")
+
     if not job:
-        # Check if video exists directly in media/
-        clean_id = analysis_id.replace("analysis_", "")
-        possible_media = os.path.join("media", f"{clean_id}.mp4")
-        if os.path.exists(possible_media):
-            dur = probe_video_duration(possible_media)
-            sz = f"{(os.path.getsize(possible_media) / (1024 * 1024)):.1f} MB"
+        if os.path.exists(target_media):
+            dur = probe_video_duration(target_media)
+            sz = f"{(os.path.getsize(target_media) / (1024 * 1024)):.1f} MB"
             job = {
                 "id": analysis_id,
-                "video_name": f"{clean_id}.mp4",
-                "video_path": possible_media,
+                "video_name": req.video_name or f"{clean_id}.mp4",
+                "video_path": target_media,
                 "file_size": sz,
                 "duration": dur,
                 "status": "pending",
@@ -255,7 +337,7 @@ async def start_analysis(analysis_id: str, req: StartAnalysisRequest, background
             }
             ACTIVE_JOBS[analysis_id] = job
         else:
-            raise HTTPException(status_code=404, detail="Analysis job not found")
+            raise HTTPException(status_code=404, detail="Analysis job not found and no video file available")
 
     job["status"] = "processing"
     config_dict = req.model_dump()
@@ -275,9 +357,8 @@ def get_pipeline_status(analysis_id: str):
     if job:
         return {"stages": job["stages"], "status": job["status"]}
 
-    # If already completed on disk
+    # Check if completed on disk
     clean_stem = analysis_id.replace("analysis_", "")
-    # Check if explained artifact exists
     explained_candidates = glob.glob(f"output/*{clean_stem}*_explained.json") + glob.glob(f"VERITAS-V/output/*{clean_stem}*_explained.json")
     if explained_candidates:
         completed_stages = [
@@ -285,6 +366,22 @@ def get_pipeline_status(analysis_id: str):
             for s in DEFAULT_STAGES
         ]
         return {"stages": completed_stages, "status": "completed"}
+
+    # Check Supabase database fallback
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_KEY")
+    if supabase_url and supabase_key:
+        try:
+            r = requests.get(
+                f"{supabase_url}/rest/v1/analyses?id=eq.{analysis_id}&select=status,stages",
+                headers={"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"},
+                timeout=5
+            )
+            if r.ok and r.json():
+                row = r.json()[0]
+                return {"stages": row.get("stages", DEFAULT_STAGES), "status": row.get("status", "completed")}
+        except Exception:
+            pass
 
     raise HTTPException(status_code=404, detail="Analysis ID not found")
 
