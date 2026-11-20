@@ -192,10 +192,25 @@ export default function NewAnalysis() {
             videoUrl: uploadRes.publicUrl,
           });
         })
-        .catch((err) => {
-          setIsUploading(false);
-          console.error('Supabase upload error:', err);
-          setErrorMessage(`Upload to cloud storage failed: ${err.message || 'Network error'}`);
+        .catch(async (err) => {
+          console.warn('Supabase upload failed, attempting direct backend upload fallback:', err);
+          try {
+            setUploadProgress(50);
+            const backendRes = await analysisService.uploadVideo(file);
+            setIsUploading(false);
+            setUploadProgress(100);
+            setUploadedDetails({
+              id: backendRes.id,
+              name: backendRes.name,
+              size: backendRes.size,
+              duration: backendRes.duration || durationSec,
+              thumbnail: '/frames/my_video_frames/my_video_scene_001_start.jpg',
+            });
+          } catch (backendErr: any) {
+            setIsUploading(false);
+            console.error('All upload methods failed:', backendErr);
+            setErrorMessage(`Upload failed: ${err.message || 'Could not upload to cloud storage or backend'}`);
+          }
         });
     };
 
