@@ -18,6 +18,7 @@ import Container from '../components/Container';
 import IconTile from '../components/IconTile';
 import { usePageMeta } from '../hooks/usePageMeta';
 import { analysisService } from '../services/analysisService';
+import { resolveMediaUrl } from '../services/api';
 import type { VideoAnalysis } from '../types';
 
 export default function Dashboard() {
@@ -325,7 +326,7 @@ export default function Dashboard() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {filteredAnalyses.map((analysis) => {
                 const thumbnail =
-                  analysis.scenes[0]?.frameFiles[0] ||
+                  resolveMediaUrl(analysis.scenes[0]?.frameFiles[0]) ||
                   '/frames/my_video_frames/my_video_scene_001_start.jpg';
 
                 // Determine Trust Score Badge Styling

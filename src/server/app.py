@@ -164,7 +164,20 @@ def sync_analysis_to_supabase(analysis_id: str, analysis_data: dict, video_url: 
         "file_size": analysis_data.get("fileSize", "N/A"),
         "duration": analysis_data.get("duration", 0),
         "status": "completed",
-        "stages": [{"id": "pipeline", "status": "completed", "progress": 100, "output_data": analysis_data}],
+        "stages": [
+            {
+                "id": "captioning",
+                "status": "completed",
+                "progress": 100,
+                "output_data": {"scenes": analysis_data.get("scenes", [])}
+            },
+            {
+                "id": "diarization",
+                "status": "completed",
+                "progress": 100,
+                "output_data": {"speakers": analysis_data.get("speakers", [])}
+            }
+        ],
         "causal_graph": {"claims": analysis_data.get("causalRelations", [])},
         "verification_report": {
             "trust_score": analysis_data.get("trustScore", 85),
@@ -221,6 +234,18 @@ def run_pipeline_worker(analysis_id: str, video_path: str, config: Dict[str, Any
             progress_callback=update_stage
         )
         update_stage("captioning", "completed", 100, "Scene detection and keyframe captioning complete.")
+
+        # Surface mock-fallback instead of silently reporting success
+        try:
+            with open(captions_file, "r", encoding="utf-8") as cf:
+                caps = json.load(cf)
+            scenes_map = caps.get("scenes", caps) if isinstance(caps, dict) else {}
+            if any("Mock caption" in str(s.get("caption", "")) for s in scenes_map.values()):
+                job["degraded"] = True
+                update_stage("captioning", "completed", 100,
+                             "WARNING: Gemini unavailable, mock captions in use. Check GEMINI_API_KEY on Render.")
+        except Exception:
+            pass
 
         # Stage 2: Narrative
         update_stage("narrative", "processing", 20, "Synthesizing chronological video narrative...")

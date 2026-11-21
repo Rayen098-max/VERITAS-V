@@ -15,6 +15,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { analysisService } from '../services/analysisService';
+import { resolveMediaUrl } from '../services/api';
 import type { VideoAnalysis } from '../types';
 import Container from '../components/Container';
 import IconTile from '../components/IconTile';
@@ -191,7 +192,7 @@ export default function History() {
               <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
                 {filteredAnalyses.map((item) => {
                   const hasThumbnail = item.scenes[0]?.frameFiles[0];
-                  const thumbnail = hasThumbnail || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&q=80';
+                  const thumbnail = resolveMediaUrl(hasThumbnail) || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&q=80';
 
                   const trustColor = item.trustScore >= 90
                     ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/30'

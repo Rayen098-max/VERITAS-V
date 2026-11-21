@@ -5,3 +5,10 @@ export const USE_MOCK_DATA = false;
 export const API_BASE_URL = ((import.meta as any).env?.VITE_API_URL || 'https://veritas-v.onrender.com/api').replace(/\/+$/, '');
 export const REQUEST_LATENCY_MS = 500; // Simulated latency for fallback requests
 
+const MEDIA_ORIGIN = API_BASE_URL.replace(/\/api$/, '');
+export const resolveMediaUrl = (p?: string): string => {
+  if (!p) return '';
+  if (/^https?:\/\//.test(p)) return p;
+  return `${MEDIA_ORIGIN}${p.startsWith('/') ? p : `/${p}`}`;
+};
+

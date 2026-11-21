@@ -23,6 +23,7 @@ import {
   Lock
 } from 'lucide-react';
 import { analysisService } from '../services/analysisService';
+import { resolveMediaUrl } from '../services/api';
 import type { VideoAnalysis, ExplainabilityResult, VerificationStatus, ExtractedFrameItem } from '../types';
 import CausalGraph from '../components/CausalGraph';
 import EvidenceModal from '../components/EvidenceModal';
@@ -311,10 +312,10 @@ ${analysis.verifications.map(v => `| **${v.sceneId}** | ${v.statement} | **${v.s
               <div className="rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-200 dark:border-neutral-800 aspect-video relative flex items-center justify-center shadow-md">
                 {analysis.videoUrl ? (
                   <video 
-                    src={analysis.videoUrl} 
+                    src={resolveMediaUrl(analysis.videoUrl)} 
                     controls 
                     className="w-full h-full object-contain bg-black"
-                    poster={analysis.scenes[0]?.frameFiles[0]}
+                    poster={resolveMediaUrl(analysis.scenes[0]?.frameFiles[0])}
                   />
                 ) : (
                   <div className="text-center p-6 space-y-2">
@@ -591,7 +592,7 @@ ${analysis.verifications.map(v => `| **${v.sceneId}** | ${v.statement} | **${v.s
                     <div className="w-full sm:w-36 aspect-video rounded-xl overflow-hidden bg-neutral-950 border border-neutral-200 dark:border-neutral-800 shrink-0 relative">
                       {scene.frameFiles[0] ? (
                         <img 
-                          src={scene.frameFiles[0]} 
+                          src={resolveMediaUrl(scene.frameFiles[0])} 
                           alt={`Scene ${scene.sceneId} preview`} 
                           className="w-full h-full object-cover"
                         />
@@ -705,7 +706,7 @@ ${analysis.verifications.map(v => `| **${v.sceneId}** | ${v.statement} | **${v.s
                       <div className="grid grid-cols-2 gap-2">
                         {activeScene.frameFiles.map((url, idx) => (
                           <div key={idx} className="aspect-video rounded-lg overflow-hidden bg-neutral-950 border border-neutral-200 dark:border-neutral-800">
-                            <img src={url} alt={`Frame ${idx + 1}`} className="w-full h-full object-cover" />
+                            <img src={resolveMediaUrl(url)} alt={`Frame ${idx + 1}`} className="w-full h-full object-cover" />
                           </div>
                         ))}
                       </div>
@@ -988,7 +989,7 @@ ${analysis.verifications.map(v => `| **${v.sceneId}** | ${v.statement} | **${v.s
         <FrameInspectorModal
           isOpen={!!selectedFrameItem}
           onClose={() => setSelectedFrameItem(null)}
-          frameFiles={[selectedFrameItem.frameUrl]}
+          frameFiles={[resolveMediaUrl(selectedFrameItem.frameUrl)]}
           claimText={selectedFrameItem.caption}
           sceneId={selectedFrameItem.sceneId}
           timestamp={selectedFrameItem.timestampStr}

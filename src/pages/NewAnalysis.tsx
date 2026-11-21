@@ -791,12 +791,12 @@ export default function NewAnalysis() {
                   ) : (
                     <>
                       <Play className="w-4 h-4 fill-current" />
-                      <span>Run Verification Pipeline (~9.2s est.)</span>
+                      <span>Run Verification Pipeline (Cloud Multi-Agent)</span>
                     </>
                   )}
                 </button>
                 <span className="text-[10px] font-mono text-[var(--text-muted)] text-center block mt-2">
-                  Estimated runtime: 4.8s perception + 1.4s reasoning + 2.1s verification + 0.5s reports
+                  Cloud execution: automated multi-agent perception, reasoning & visual verification
                 </span>
               </div>
             </div>
@@ -804,9 +804,9 @@ export default function NewAnalysis() {
         </div>
 
         {/* =========================================================================
-            LIVE EXECUTION STEPPER & STREAMING LOGS (APPEARS WHEN RUNNING)
+            LIVE EXECUTION STEPPER & STREAMING LOGS (APPEARS WHEN RUNNING OR COMPLETED)
         ========================================================================= */}
-        {isAnalyzing && (
+        {(isAnalyzing || isCompleted) && (
           <div className="mt-8 p-6 rounded-[16px] border border-[var(--border-default)] bg-[var(--bg-surface)] shadow-md space-y-6">
             <div className="flex items-center justify-between border-b border-[var(--border-default)] pb-4">
               <div className="flex items-center gap-2">

@@ -4,7 +4,7 @@ import type { VideoAnalysis } from '../types';
 const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || 'https://lxkrjfhnokyojaduymoy.supabase.co';
 const supabaseAnonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey || 'dummy-anon-key');
 
 export interface UploadResult {
   publicUrl: string;
@@ -20,6 +20,10 @@ export async function uploadVideoToSupabase(
   file: File,
   onProgress?: (progressPct: number) => void
 ): Promise<UploadResult> {
+  if (!supabaseAnonKey || supabaseAnonKey.startsWith('sb_secret') || supabaseAnonKey === 'dummy-anon-key') {
+    throw new Error('Supabase publishable anon key not configured; routing to direct backend upload.');
+  }
+
   const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
   const storagePath = `${Date.now()}_${cleanName}`;
 

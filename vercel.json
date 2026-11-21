@@ -6,6 +6,18 @@
   "installCommand": "npm install",
   "rewrites": [
     {
+      "source": "/frames/:path*",
+      "destination": "https://veritas-v.onrender.com/frames/:path*"
+    },
+    {
+      "source": "/media/:path*",
+      "destination": "https://veritas-v.onrender.com/media/:path*"
+    },
+    {
+      "source": "/output/:path*",
+      "destination": "https://veritas-v.onrender.com/output/:path*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
